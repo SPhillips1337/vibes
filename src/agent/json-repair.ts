@@ -12,23 +12,49 @@ export function repairJson(json: string): string {
     }
   }
 
-  // Basic repairs for common LLM issues
-  
-  // 1. Remove trailing commas before closing braces/brackets
-  repaired = repaired.replace(/,\s*([}\]])/g, '$1');
+  // Remove trailing commas only when not inside strings
+  let result = '';
+  let inString = false;
+  let escaped = false;
 
-  // 2. Attempt to fix unterminated strings (heuristic)
-  // If we have an odd number of quotes on a line, it's likely a problem
-  // But this is risky, so we'll be conservative.
+  for (let i = 0; i < repaired.length; i++) {
+    const char = repaired[i];
+    const nextChar = i + 1 < repaired.length ? repaired[i + 1] : '';
 
-  // 3. Ensure it starts and ends with braces
+    // Handle string state
+    if (char === '"' && !escaped) {
+      inString = !inString;
+      result += char;
+      continue;
+    }
+
+    if (inString) {
+      if (char === '\\') escaped = !escaped;
+      else escaped = false;
+      result += char;
+      continue;
+    }
+
+    escaped = false;
+
+    // Skip comma if it's a trailing comma before } or ]
+    if (char === ',' && (nextChar === '}' || nextChar === ']')) {
+      continue;
+    }
+
+    result += char;
+  }
+
+  repaired = result;
+
+  // Ensure it starts and ends with braces
   if (!repaired.startsWith('{')) repaired = '{' + repaired;
   
   // Count braces to find missing closures
   let openBraces = 0;
   let openBrackets = 0;
-  let inString = false;
-  let escaped = false;
+  inString = false;
+  escaped = false;
 
   for (let i = 0; i < repaired.length; i++) {
     const char = repaired[i];

@@ -59,18 +59,38 @@ Rules:
 
         if (message.tool_calls && message.tool_calls.length > 0) {
           for (const toolCall of message.tool_calls) {
+            let args: any;
+            let result: ToolResult = { success: false, error: 'Unknown error' };
+            let parsed = false;
+
+            try {
+              args = JSON.parse(toolCall.function.arguments);
+              parsed = true;
+            } catch (parseError: any) {
+              result = { success: false, error: `JSON parse error: ${parseError.message}` };
+            }
+
             onEvent?.({ 
               type: 'tool_call', 
               tool: toolCall.function.name, 
-              args: JSON.parse(toolCall.function.arguments) 
+              args: parsed ? args : toolCall.function.arguments
             });
 
+            if (!parsed) {
+              onEvent?.({ type: 'tool_result', tool: toolCall.function.name, result });
+              logObject(`Tool Parse Error [${toolCall.function.name}]`, result);
+              messages.push({
+                role: 'tool',
+                tool_call_id: toolCall.id,
+                content: JSON.stringify(result),
+              });
+              continue;
+            }
+
             const tool = this.tools.find(t => t.name === toolCall.function.name);
-            let result: ToolResult;
 
             if (tool) {
               try {
-                const args = JSON.parse(toolCall.function.arguments);
                 result = await tool.execute(args, { workspaceRoot });
               } catch (error: any) {
                 result = { success: false, error: `Execution error: ${error.message}` };

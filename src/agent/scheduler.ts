@@ -9,11 +9,22 @@ export class Scheduler {
   private runningTasks: Set<string> = new Set();
   private completedTasks: Set<string> = new Set();
   private failedTasks: Set<string> = new Set();
+  private taskMap: Map<string, Task> = new Map();
 
   constructor(mission: Mission, executor: TaskExecutor, onEvent?: OnEvent) {
     this.mission = mission;
     this.executor = executor;
     this.onEvent = onEvent;
+    this.rebuildTaskMap();
+  }
+
+  private rebuildTaskMap() {
+    this.taskMap.clear();
+    for (const milestone of this.mission.milestones) {
+      for (const task of milestone.tasks) {
+        this.taskMap.set(task.id, task);
+      }
+    }
   }
 
   async run() {
@@ -59,7 +70,7 @@ export class Scheduler {
   }
 
   private getAllTasks(): Task[] {
-    return this.mission.milestones.flatMap(m => m.tasks);
+    return Array.from(this.taskMap.values());
   }
 
   private async executeTask(task: Task) {
@@ -70,20 +81,33 @@ export class Scheduler {
       const missionContext = `Mission: ${this.mission.title}\nDescription: ${this.mission.description}`;
       const updatedTask = await this.executor.executeTask(task, missionContext, this.mission.workspace_root, this.onEvent);
       
-      // Update task in mission structure
+      // Update task in mission structure and task map
       this.updateTaskInMission(updatedTask);
 
       if (updatedTask.status === 'done') {
         this.completedTasks.add(task.id);
       } else {
         this.failedTasks.add(task.id);
+        this.markDependentsFailed(task.id);
       }
     } catch (error: any) {
       task.status = 'failed';
       task.error = error.message;
       this.failedTasks.add(task.id);
+      this.markDependentsFailed(task.id);
     } finally {
       this.runningTasks.delete(task.id);
+    }
+  }
+
+  private markDependentsFailed(failedTaskId: string) {
+    for (const [id, task] of this.taskMap) {
+      if (task.depends_on.includes(failedTaskId) && task.status === 'todo') {
+        task.status = 'failed';
+        task.error = `Dependency ${failedTaskId} failed`;
+        this.failedTasks.add(id);
+        this.markDependentsFailed(id);
+      }
     }
   }
 
@@ -95,6 +119,8 @@ export class Scheduler {
         break;
       }
     }
+    // Keep task map in sync
+    this.taskMap.set(updatedTask.id, updatedTask);
   }
 
   // Future: Add method to inject new tasks discovered during execution
@@ -102,6 +128,7 @@ export class Scheduler {
     const milestone = this.mission.milestones.find(m => m.id === milestoneId);
     if (milestone) {
       milestone.tasks.push(newTask);
+      this.taskMap.set(newTask.id, newTask);
     }
   }
 }

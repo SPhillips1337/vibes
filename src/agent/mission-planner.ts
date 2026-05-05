@@ -41,7 +41,7 @@ Constraints:
       model: MODEL,
       messages: [
         { role: 'system', content: systemPrompt },
-        { role: 'user', content: description },
+        { role: 'user', content: `Please plan a mission for the following request:\n\n<request>\n${description}\n</request>` },
       ],
       response_format: { type: 'json_object' },
       temperature: 0.1,
