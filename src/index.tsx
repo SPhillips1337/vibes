@@ -63,7 +63,7 @@ const App = () => {
     <Box flexDirection="column" padding={1}>
       {/* Header */}
       <Box justifyContent="space-between" borderStyle="round" borderColor="blue" paddingX={1}>
-        <Text bold color="cyan">GEMMA4 TUI HARNESS</Text>
+        <Text bold color="cyan">VIBES TUI</Text>
         <Box gap={2}>
           <Text color={view === 'dashboard' ? 'white' : 'blue'}>[Alt+D] Dashboard</Text>
           <Text color={view === 'mission' ? 'white' : 'blue'}>[Alt+M] Mission</Text>

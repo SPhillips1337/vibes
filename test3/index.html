@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sudoku</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="sudoku-board" id="board"></div>
+    <script>
+        const board = document.getElementById('board');
+        for (let i = 0; i < 81; i++) {
+            const cell = document.createElement('div');
+            cell.classList.add('cell');
+            board.appendChild(cell);
+        }
+    </script>
+</body>
+</html>

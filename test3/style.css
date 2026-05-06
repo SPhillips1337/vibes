@@ -1,0 +1,51 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    min-height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    background-color: #f5f5f5;
+    font-family: Arial, sans-serif;
+}
+
+.sudoku-board {
+    display: grid;
+    grid-template-columns: repeat(9, 1fr);
+    grid-template-rows: repeat(9, 1fr);
+    width: min(90vw, 450px);
+    height: min(90vw, 450px);
+    border: 3px solid #333;
+}
+
+.sudoku-board .cell {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    font-size: 1.2rem;
+    border: 1px solid #ccc;
+}
+
+/* Thick borders for 3x3 sub-grids */
+.sudoku-board .cell:nth-child(9n+3),
+.sudoku-board .cell:nth-child(9n+6) {
+    border-right: 3px solid #333;
+}
+
+.sudoku-board .cell:nth-child(n+19):nth-child(-n+27),
+.sudoku-board .cell:nth-child(n+46):nth-child(-n+54) {
+    border-bottom: 3px solid #333;
+}
+
+/* Remove outer borders where grid border applies */
+.sudoku-board .cell:nth-child(9n) {
+    border-right: none;
+}
+
+.sudoku-board .cell:nth-child(n+73) {
+    border-bottom: none;
+}
