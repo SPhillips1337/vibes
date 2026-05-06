@@ -6,10 +6,11 @@ interface DashboardProps {
   mission: Mission | null;
   isPlanning: boolean;
   isExecuting: boolean;
+  isYoloMode?: boolean;
   contextUsage?: { used: number; total: number; percentage: number } | null;
 }
 
-export const Dashboard: React.FC<DashboardProps> = ({ mission, isPlanning, isExecuting, contextUsage }) => {
+export const Dashboard: React.FC<DashboardProps> = ({ mission, isPlanning, isExecuting, isYoloMode, contextUsage }) => {
   const [dots, setDots] = useState('');
 
   // Heartbeat animation
@@ -108,6 +109,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ mission, isPlanning, isExe
           <Text color="yellow">Status: </Text>
           <Text bold color="yellow">EXECUTING AGENT LOOP</Text>
           <Text color="yellow"> {dots}</Text>
+          {isYoloMode && <Text color="yellow" bold inverse> [YOLO MODE ENABLED] </Text>}
         </Box>
       )}
 

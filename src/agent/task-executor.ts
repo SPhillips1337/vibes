@@ -21,7 +21,13 @@ export class TaskExecutor {
     this.tools = tools;
   }
 
-  async executeTask(task: Task, missionContext: string, workspaceRoot: string, onEvent?: OnEvent): Promise<Task> {
+  async executeTask(
+    task: Task, 
+    missionContext: string, 
+    workspaceRoot: string, 
+    onEvent?: OnEvent,
+    getYoloMode: () => boolean = () => false
+  ): Promise<Task> {
     log(`Executing task: ${task.title}`, 'INFO');
 
     let memoriesSection = '';
@@ -69,16 +75,24 @@ Rules:
     }
 
     let currentTask: Task = { ...task, status: 'in_progress' };
-    const maxSteps = config.MAX_STEPS + (task.extraSteps || 0);
+    
+    for (let step = 0; ; step++) {
+      // Check limits every step to allow live toggling
+      const isYolo = getYoloMode();
+      const currentMax = isYolo ? 9999 : (config.MAX_STEPS + (task.extraSteps || 0));
+      
+      if (step >= currentMax) {
+        currentTask = { ...currentTask, status: 'failed', error: 'Max steps exceeded' };
+        return currentTask;
+      }
 
-    for (let step = 0; step < maxSteps; step++) {
       try {
         // Compress context if approaching the window limit
         messages = compressMessages(messages);
 
         // Log context usage
         const stats = getContextStats(messages);
-        log(`Context usage: ~${stats.used}/${stats.usable} tokens (${stats.percentage}%) [step ${step + 1}/${maxSteps}]`, 'DEBUG');
+        log(`Context usage: ~${stats.used}/${stats.usable} tokens (${stats.percentage}%) [step ${step + 1}/${currentMax}]`, 'DEBUG');
         onEvent?.({ type: 'context_update', used: stats.used, total: stats.usable, percentage: stats.percentage });
 
         const response = await ollama.chat.completions.create({

@@ -18,9 +18,19 @@ export const useMission = () => {
   const [contextUsage, setContextUsage] = useState<{ used: number; total: number; percentage: number } | null>(null);
   const [pendingIntervention, setPendingIntervention] = useState<{ taskId: string; error: string; question: string } | null>(null);
   const [activeMaxSteps, setActiveMaxSteps] = useState(config.MAX_STEPS);
+  const [isYoloMode, setIsYoloMode] = useState(false);
 
   // Hold a direct ref to the running scheduler so we can resolve interventions on it
   const schedulerRef = useRef<Scheduler | null>(null);
+  const isYoloRef = useRef(false);
+
+  const toggleYoloMode = useCallback(() => {
+    setIsYoloMode(prev => {
+      const newVal = !prev;
+      isYoloRef.current = newVal;
+      return newVal;
+    });
+  }, []);
 
   const startMission = useCallback(async (description: string, workspaceRoot: string = process.cwd()) => {
     setIsPlanning(true);
@@ -70,7 +80,7 @@ export const useMission = () => {
         }
       };
 
-      const scheduler = new Scheduler(plan, executor, onEvent);
+      const scheduler = new Scheduler(plan, executor, onEvent, () => isYoloRef.current);
       schedulerRef.current = scheduler;
       const completedMission = await scheduler.run();
       setMission({ ...completedMission });
@@ -109,9 +119,11 @@ export const useMission = () => {
     contextUsage,
     pendingIntervention,
     activeMaxSteps,
+    isYoloMode,
     startMission,
     approveMission,
     rejectMission,
     resolveIntervention,
+    toggleYoloMode,
   };
 };

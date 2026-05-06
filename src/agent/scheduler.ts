@@ -21,11 +21,13 @@ export class Scheduler {
 
   // Pending intervention: resolve callback waiting for user input
   private interventionResolve: ((res: InterventionResolution) => void) | null = null;
+  private getYoloMode: () => boolean;
 
-  constructor(mission: Mission, executor: TaskExecutor, onEvent?: OnEvent) {
+  constructor(mission: Mission, executor: TaskExecutor, onEvent?: OnEvent, getYoloMode: () => boolean = () => false) {
     this.mission = mission;
     this.executor = executor;
     this.onEvent = onEvent;
+    this.getYoloMode = getYoloMode;
     this.rebuildTaskMap();
   }
 
@@ -112,7 +114,7 @@ export class Scheduler {
 
     try {
       const missionContext = `Mission: ${this.mission.title}\nDescription: ${this.mission.description}`;
-      const updatedTask = await this.executor.executeTask(task, missionContext, this.mission.workspace_root, this.onEvent);
+      const updatedTask = await this.executor.executeTask(task, missionContext, this.mission.workspace_root, this.onEvent, this.getYoloMode);
       
       updatedTask.userGuidance = undefined;
       this.updateTaskInMission(updatedTask);

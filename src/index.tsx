@@ -15,6 +15,7 @@ const App = () => {
   const {
     mission, pendingMission, isPlanning, isExecuting,
     error, events, contextUsage, pendingIntervention, activeMaxSteps,
+    isYoloMode, toggleYoloMode,
     startMission, approveMission, rejectMission, resolveIntervention,
   } = useMission();
 
@@ -26,14 +27,17 @@ const App = () => {
   useInput((input, key) => {
     if (key.ctrl && input === 'q') exit();
 
-    // Suppress nav keys while modal views are visible
+    // Suppress nav/toggle keys while modal views or setup form are active
     if (pendingMission || pendingIntervention) return;
 
-    if (key.meta) {
+    if (key.meta && !isIdle) {
       if (input === 'd') { setView('dashboard'); return; }
       if (input === 'm') { setView('mission'); return; }
       if (input === 't') { setView('task'); return; }
+      if (input === 'y') { toggleYoloMode(); return; }
     }
+    
+    // Always allow Tab for form navigation
     if (key.tab) setFocusIndex(prev => (prev === 0 ? 1 : 0));
   });
 
@@ -55,16 +59,23 @@ const App = () => {
       <Box justifyContent="space-between" borderStyle="round" borderColor="blue" paddingX={1}>
         <Text bold color="cyan">VIBES TUI</Text>
         <Box gap={2}>
-          {!pendingMission && (
+          {!pendingMission && !pendingIntervention && !isIdle && (
             <>
               <Text color={view === 'dashboard' ? 'white' : 'blue'}>[Alt+D] Dashboard</Text>
               <Text color={view === 'mission' ? 'white' : 'blue'}>[Alt+M] Mission</Text>
               <Text color={view === 'task' ? 'white' : 'blue'}>[Alt+T] Task View</Text>
+              <Text color={isYoloMode ? 'yellow' : 'blue'} bold={isYoloMode}>[Alt+Y] YOLO {isYoloMode ? 'ON' : 'OFF'}</Text>
             </>
           )}
           <Text color="red">[Ctrl+Q] Quit</Text>
         </Box>
       </Box>
+
+      {isYoloMode && (
+        <Box justifyContent="center" borderStyle="single" borderColor="yellow" paddingX={1} marginTop={1}>
+          <Text color="yellow" bold inverse> ⚡ YOLO MODE ENABLED — NO STEP LIMITS ⚡ </Text>
+        </Box>
+      )}
 
       {/* Main Content */}
       <Box flexDirection="column" minHeight={15} marginTop={1}>
@@ -101,6 +112,7 @@ const App = () => {
             mission={mission}
             isPlanning={isPlanning}
             isExecuting={isExecuting}
+            isYoloMode={isYoloMode}
             contextUsage={contextUsage}
           />
         )}
@@ -167,8 +179,8 @@ const App = () => {
         <Text color="gray">
           Context: {contextKB}K tokens | Max Steps: 
         </Text>
-        <Text color={activeMaxSteps > config.MAX_STEPS ? 'yellow' : 'gray'} bold={activeMaxSteps > config.MAX_STEPS}>
-          {activeMaxSteps}{activeMaxSteps > config.MAX_STEPS ? ` (+${activeMaxSteps - config.MAX_STEPS})` : ''}
+        <Text color={isYoloMode || activeMaxSteps > config.MAX_STEPS ? 'yellow' : 'gray'} bold={isYoloMode || activeMaxSteps > config.MAX_STEPS}>
+          {isYoloMode ? '∞' : activeMaxSteps}{!isYoloMode && activeMaxSteps > config.MAX_STEPS ? ` (+${activeMaxSteps - config.MAX_STEPS})` : ''}
         </Text>
         <Text color="gray"> | Concurrent: {config.MAX_CONCURRENT_TASKS}</Text>
       </Box>
