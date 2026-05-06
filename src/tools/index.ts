@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { ToolResult } from '../agent/types.js';
 import path from 'path';
+import { log } from '../logger.js';
 
 export interface ToolDefinition {
   name: string;
@@ -10,8 +11,17 @@ export interface ToolDefinition {
 }
 
 export function resolvePath(workspaceRoot: string, targetPath: string): string {
-  if (path.isAbsolute(targetPath)) return targetPath;
-  return path.resolve(workspaceRoot, targetPath);
+  const jail = path.resolve(workspaceRoot);
+  const resolved = path.isAbsolute(targetPath)
+    ? path.resolve(targetPath)
+    : path.resolve(workspaceRoot, targetPath);
+
+  if (!resolved.startsWith(jail + path.sep) && resolved !== jail) {
+    log(`Path escape blocked: "${targetPath}" resolved to "${resolved}" (outside "${jail}")`, 'WARN');
+    throw new Error(`Access denied: path "${targetPath}" is outside the workspace root.`);
+  }
+
+  return resolved;
 }
 
 export function toOpenAITool(tool: ToolDefinition) {

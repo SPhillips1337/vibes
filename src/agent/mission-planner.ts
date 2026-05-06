@@ -49,7 +49,20 @@ Constraints:
 2. MAX 5 tasks per milestone.
 3. Keep descriptions very short.
 4. Focus on the primary goal first.
-5. No extra text or preamble.`;
+5. No extra text or preamble.
+6. STOP when the acceptance criteria are met. Do not add extra polish, build pipelines, or deployment steps unless explicitly requested.
+
+STRICT BOUNDARIES — plans MUST NOT include tasks that:
+- Generate SSL/TLS certificates, SSH keys, API keys, secrets, or any credentials.
+- Run network tools: curl, wget, scp, rsync, ssh, sftp, nc.
+- Push to or clone from remote git repositories.
+- Install global packages (npm -g, pip --system, yarn global).
+- Use sudo, su, chown, or escalate privileges.
+- Create Docker, Kubernetes, CI/CD, or deployment infrastructure (unless the user's request explicitly mentions deployment).
+- Write files outside the provided workspace directory.
+- Use openssl, ssh-keygen, gpg, or any cryptography tooling.
+
+A request for a "web app" means: HTML, CSS, and JavaScript files only. Not a build pipeline, not a service worker, not a deployment config — unless explicitly asked.`;
 
     const response = await ollama.chat.completions.create({
       model: MODEL,

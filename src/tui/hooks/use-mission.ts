@@ -9,6 +9,7 @@ import { editFileTool } from '../../tools/file-edit.js';
 
 export const useMission = () => {
   const [mission, setMission] = useState<Mission | null>(null);
+  const [pendingMission, setPendingMission] = useState<Mission | null>(null); // awaiting approval
   const [isPlanning, setIsPlanning] = useState(false);
   const [isExecuting, setIsExecuting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -20,19 +21,31 @@ export const useMission = () => {
     setError(null);
     setEvents([]);
     setContextUsage(null);
+    setPendingMission(null);
     try {
       const planner = new MissionPlanner();
       const plan = await planner.planMission(description, workspaceRoot);
-      setMission(plan);
+      // Don't execute yet — present plan for approval
+      setPendingMission(plan);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
       setIsPlanning(false);
+    }
+  }, []);
 
-      // Automatically start execution after planning for now
-      setIsExecuting(true);
+  const approveMission = useCallback(async () => {
+    if (!pendingMission) return;
+    const plan = pendingMission;
+    setPendingMission(null);
+    setMission(plan);
+    setIsExecuting(true);
+
+    try {
       const tools = [listDirTool, readFileTool, writeFileTool, editFileTool, globTool, shellTool];
       const executor = new TaskExecutor(tools);
-      
+
       const onEvent = (event: ExecutionEvent) => {
-        // Track context usage separately for the dashboard
         if (event.type === 'context_update') {
           setContextUsage({ used: event.used, total: event.total, percentage: event.percentage });
         }
@@ -40,24 +53,30 @@ export const useMission = () => {
       };
 
       const scheduler = new Scheduler(plan, executor, onEvent);
-      
       const completedMission = await scheduler.run();
       setMission({ ...completedMission });
     } catch (err: any) {
       setError(err.message);
-      setIsPlanning(false);
     } finally {
       setIsExecuting(false);
     }
+  }, [pendingMission]);
+
+  const rejectMission = useCallback(() => {
+    setPendingMission(null);
+    setError(null);
   }, []);
 
   return {
     mission,
+    pendingMission,
     isPlanning,
     isExecuting,
     error,
     events,
     contextUsage,
     startMission,
+    approveMission,
+    rejectMission,
   };
 };

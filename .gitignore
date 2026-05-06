@@ -33,3 +33,10 @@ src/**/*.js
 src/**/*.d.ts
 AGENTS.md
 PLAN.md
+
+# Vibes Agent
+.vibes-backups/
+*.pem
+*.key
+deploy/
+test3

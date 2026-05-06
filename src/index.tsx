@@ -5,58 +5,47 @@ import { useMission } from './tui/hooks/use-mission.js';
 import { Dashboard } from './tui/components/dashboard.js';
 import { MissionView } from './tui/components/mission-view.js';
 import { TaskView } from './tui/components/task-view.js';
+import { ApprovalView } from './tui/components/approval-view.js';
 import { initLogger } from './logger.js';
 import { config } from './config.js';
 import path from 'path';
 
 const App = () => {
-  const { mission, isPlanning, isExecuting, error, events, contextUsage, startMission } = useMission();
+  const {
+    mission, pendingMission, isPlanning, isExecuting,
+    error, events, contextUsage,
+    startMission, approveMission, rejectMission,
+  } = useMission();
+
   const { exit } = useApp();
   const [workspace, setWorkspace] = React.useState(process.cwd());
   const [view, setView] = React.useState<'dashboard' | 'mission' | 'task'>('dashboard');
-  
-  // Focus state: 0 for workspace, 1 for mission
   const [focusIndex, setFocusIndex] = React.useState(0);
 
   useInput((input, key) => {
-    // Global commands
-    if (key.ctrl && input === 'q') {
-      exit();
-    }
+    if (key.ctrl && input === 'q') exit();
 
-    // Navigation (Alt + Key)
+    // Suppress nav keys while approval view is visible
+    if (pendingMission) return;
+
     if (key.meta) {
-      if (input === 'd') {
-        setView('dashboard');
-        return;
-      }
-      if (input === 'm') {
-        setView('mission');
-        return;
-      }
-      if (input === 't') {
-        setView('task');
-        return;
-      }
+      if (input === 'd') { setView('dashboard'); return; }
+      if (input === 'm') { setView('mission'); return; }
+      if (input === 't') { setView('task'); return; }
     }
-
-    // Toggle focus with Tab
-    if (key.tab) {
-      setFocusIndex(prev => (prev === 0 ? 1 : 0));
-    }
+    if (key.tab) setFocusIndex(prev => (prev === 0 ? 1 : 0));
   });
 
   const handleSubmit = (val: string) => {
     if (val.trim()) {
-      // Resolve path at the moment of submission to be safe
-      const absolutePath = path.isAbsolute(workspace) ? workspace : path.resolve(process.cwd(), workspace);
+      const absolutePath = path.isAbsolute(workspace)
+        ? workspace
+        : path.resolve(process.cwd(), workspace);
       startMission(val, absolutePath);
     }
   };
 
-  const isActive = !mission && !isPlanning;
-
-  // Format context window size for display
+  const isIdle = !mission && !isPlanning && !pendingMission;
   const contextKB = Math.round(config.CONTEXT_WINDOW / 1024);
 
   return (
@@ -65,9 +54,13 @@ const App = () => {
       <Box justifyContent="space-between" borderStyle="round" borderColor="blue" paddingX={1}>
         <Text bold color="cyan">VIBES TUI</Text>
         <Box gap={2}>
-          <Text color={view === 'dashboard' ? 'white' : 'blue'}>[Alt+D] Dashboard</Text>
-          <Text color={view === 'mission' ? 'white' : 'blue'}>[Alt+M] Mission</Text>
-          <Text color={view === 'task' ? 'white' : 'blue'}>[Alt+T] Task View</Text>
+          {!pendingMission && (
+            <>
+              <Text color={view === 'dashboard' ? 'white' : 'blue'}>[Alt+D] Dashboard</Text>
+              <Text color={view === 'mission' ? 'white' : 'blue'}>[Alt+M] Mission</Text>
+              <Text color={view === 'task' ? 'white' : 'blue'}>[Alt+T] Task View</Text>
+            </>
+          )}
           <Text color="red">[Ctrl+Q] Quit</Text>
         </Box>
       </Box>
@@ -84,19 +77,33 @@ const App = () => {
           </Box>
         )}
 
-        {view === 'dashboard' && (
-          <Dashboard mission={mission} isPlanning={isPlanning} isExecuting={isExecuting} contextUsage={contextUsage} />
+        {/* Approval gate — rendered in place of everything else */}
+        {pendingMission && (
+          <ApprovalView
+            mission={pendingMission}
+            onApprove={approveMission}
+            onReject={rejectMission}
+          />
         )}
-        
-        {view === 'mission' && mission && (
+
+        {!pendingMission && view === 'dashboard' && (
+          <Dashboard
+            mission={mission}
+            isPlanning={isPlanning}
+            isExecuting={isExecuting}
+            contextUsage={contextUsage}
+          />
+        )}
+
+        {!pendingMission && view === 'mission' && mission && (
           <MissionView mission={mission} />
         )}
 
-        {view === 'task' && (
+        {!pendingMission && view === 'task' && (
           <TaskView events={events} />
         )}
 
-        {isActive && (
+        {isIdle && (
           <Box flexDirection="column" marginTop={1}>
             <Box marginBottom={1} flexDirection="column">
               <Box gap={1}>
@@ -106,10 +113,10 @@ const App = () => {
               </Box>
               <Box borderStyle="single" borderColor={focusIndex === 0 ? 'cyan' : 'gray'} paddingX={1}>
                 {focusIndex === 0 ? (
-                  <TextInput 
+                  <TextInput
                     defaultValue={workspace}
                     onChange={setWorkspace}
-                    onSubmit={() => setFocusIndex(1)} 
+                    onSubmit={() => setFocusIndex(1)}
                   />
                 ) : (
                   <Text color="gray">{workspace}</Text>
@@ -125,8 +132,8 @@ const App = () => {
               </Box>
               <Box borderStyle="single" borderColor={focusIndex === 1 ? 'green' : 'gray'} paddingX={1}>
                 {focusIndex === 1 ? (
-                  <TextInput 
-                    placeholder="e.g. Add a dark mode toggle to the settings panel" 
+                  <TextInput
+                    placeholder="e.g. Add a dark mode toggle to the settings panel"
                     onSubmit={handleSubmit}
                   />
                 ) : (
@@ -134,7 +141,7 @@ const App = () => {
                 )}
               </Box>
             </Box>
-            
+
             <Box marginTop={1}>
               <Text color="gray">Press </Text>
               <Text color="cyan" bold>Tab</Text>
@@ -146,9 +153,7 @@ const App = () => {
 
       {/* Footer */}
       <Box marginTop={1} borderStyle="single" borderColor="gray" paddingX={1} justifyContent="space-between">
-        <Text color="gray">
-          Model: {config.OLLAMA_MODEL}
-        </Text>
+        <Text color="gray">Model: {config.OLLAMA_MODEL}</Text>
         <Text color="gray">
           Context: {contextKB}K tokens | Max Steps: {config.MAX_STEPS} | Concurrent: {config.MAX_CONCURRENT_TASKS}
         </Text>
