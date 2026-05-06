@@ -1,16 +1,35 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Box, Text } from 'ink';
 import { ExecutionEvent } from '../../agent/types.js';
 
 interface TaskViewProps {
   events: ExecutionEvent[];
+  isExecuting: boolean;
 }
 
-export const TaskView: React.FC<TaskViewProps> = ({ events }) => {
+export const TaskView: React.FC<TaskViewProps> = ({ events, isExecuting }) => {
+  const [dots, setDots] = useState('');
+
+  // Heartbeat animation
+  useEffect(() => {
+    if (!isExecuting) {
+      setDots('');
+      return;
+    }
+    const interval = setInterval(() => {
+      setDots(prev => {
+        if (prev === '...') return '';
+        return prev + '.';
+      });
+    }, 500);
+    return () => clearInterval(interval);
+  }, [isExecuting]);
+
   return (
     <Box flexDirection="column" marginTop={1} paddingX={1}>
       <Box paddingBottom={1}>
         <Text bold color="yellow">Live Agent Execution</Text>
+        {isExecuting && <Text color="yellow"> {dots}</Text>}
       </Box>
       
       <Box flexDirection="column">
@@ -61,6 +80,11 @@ export const TaskView: React.FC<TaskViewProps> = ({ events }) => {
           }
         })}
       </Box>
+      {!isExecuting && events.length > 0 && (
+        <Box marginTop={1}>
+          <Text color="gray" dimColor>[Execution Paused/Finished]</Text>
+        </Box>
+      )}
     </Box>
   );
 };

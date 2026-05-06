@@ -2,6 +2,7 @@ import { Mission, Task, Milestone, OnEvent } from './types.js';
 import { TaskExecutor } from './task-executor.js';
 import { config } from '../config.js';
 import { log } from '../logger.js';
+import { InterventionManager } from './intervention-manager.js';
 
 export class Scheduler {
   private mission: Mission;
@@ -11,6 +12,7 @@ export class Scheduler {
   private completedTasks: Set<string> = new Set();
   private failedTasks: Set<string> = new Set();
   private taskMap: Map<string, Task> = new Map();
+  private interventionManager = new InterventionManager();
 
   constructor(mission: Mission, executor: TaskExecutor, onEvent?: OnEvent) {
     this.mission = mission;
@@ -32,6 +34,15 @@ export class Scheduler {
     this.mission.status = 'executing';
     
     while (this.hasPendingTasks()) {
+      // Read status via local to defeat TS control-flow narrowing —
+      // the status is mutated asynchronously by handleTaskFailure().
+      const currentStatus = this.mission.status as Mission['status'];
+      if (currentStatus === 'awaiting_intervention') {
+        // Wait for intervention to be cleared externally
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        continue;
+      }
+
       const nextTasks = this.getReadyTasks();
       const pendingCount = this.getAllTasks().filter(t => t.status === 'todo' || t.status === 'in_progress').length;
       
@@ -47,14 +58,19 @@ export class Scheduler {
 
       if (tasksToStart.length > 0) {
         log(`Starting ${tasksToStart.length} tasks...`, 'INFO');
-        await Promise.all(tasksToStart.map(task => this.executeTask(task)));
-      } else {
-        // Wait for running tasks or small delay if blocked
-        await new Promise(resolve => setTimeout(resolve, 500));
+        // We run tasks without Promise.all to handle individual failures more gracefully
+        for (const task of tasksToStart) {
+          this.executeTask(task); // Start async
+        }
       }
+      
+      // Small sleep to avoid CPU spinning
+      await new Promise(resolve => setTimeout(resolve, 1000));
     }
 
-    this.mission.status = this.failedTasks.size > 0 ? 'failed' : 'completed';
+    if (this.mission.status === 'executing' || this.mission.status === 'awaiting_intervention') {
+      this.mission.status = this.failedTasks.size > 0 ? 'failed' : 'completed';
+    }
     return this.mission;
   }
 
@@ -81,28 +97,47 @@ export class Scheduler {
   private async executeTask(task: Task) {
     this.runningTasks.add(task.id);
     task.status = 'in_progress';
+    // Remove from failed set in case this is a retry
+    this.failedTasks.delete(task.id);
 
     try {
       const missionContext = `Mission: ${this.mission.title}\nDescription: ${this.mission.description}`;
       const updatedTask = await this.executor.executeTask(task, missionContext, this.mission.workspace_root, this.onEvent);
       
+      // Clear one-shot guidance after use
+      updatedTask.userGuidance = undefined;
+
       // Update task in mission structure and task map
       this.updateTaskInMission(updatedTask);
 
       if (updatedTask.status === 'done') {
         this.completedTasks.add(task.id);
       } else {
-        this.failedTasks.add(task.id);
-        this.markDependentsFailed(task.id);
+        await this.handleTaskFailure(updatedTask);
       }
     } catch (error: any) {
       task.status = 'failed';
       task.error = error.message;
-      this.failedTasks.add(task.id);
-      this.markDependentsFailed(task.id);
+      task.userGuidance = undefined;
+      await this.handleTaskFailure(task);
     } finally {
       this.runningTasks.delete(task.id);
     }
+  }
+
+  private async handleTaskFailure(task: Task) {
+    this.failedTasks.add(task.id);
+    this.markDependentsFailed(task.id);
+    
+    this.mission.status = 'awaiting_intervention';
+    const question = await this.interventionManager.formulateInterventionQuestion(task, this.mission, task.error || 'Unknown error');
+    
+    this.onEvent?.({
+      type: 'intervention_required',
+      taskId: task.id,
+      error: task.error || 'Unknown error',
+      question
+    });
   }
 
   private markDependentsFailed(failedTaskId: string) {

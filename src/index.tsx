@@ -6,6 +6,7 @@ import { Dashboard } from './tui/components/dashboard.js';
 import { MissionView } from './tui/components/mission-view.js';
 import { TaskView } from './tui/components/task-view.js';
 import { ApprovalView } from './tui/components/approval-view.js';
+import { InterventionView } from './tui/components/intervention-view.js';
 import { initLogger } from './logger.js';
 import { config } from './config.js';
 import path from 'path';
@@ -13,8 +14,8 @@ import path from 'path';
 const App = () => {
   const {
     mission, pendingMission, isPlanning, isExecuting,
-    error, events, contextUsage,
-    startMission, approveMission, rejectMission,
+    error, events, contextUsage, pendingIntervention,
+    startMission, approveMission, rejectMission, resolveIntervention,
   } = useMission();
 
   const { exit } = useApp();
@@ -25,8 +26,8 @@ const App = () => {
   useInput((input, key) => {
     if (key.ctrl && input === 'q') exit();
 
-    // Suppress nav keys while approval view is visible
-    if (pendingMission) return;
+    // Suppress nav keys while modal views are visible
+    if (pendingMission || pendingIntervention) return;
 
     if (key.meta) {
       if (input === 'd') { setView('dashboard'); return; }
@@ -77,7 +78,7 @@ const App = () => {
           </Box>
         )}
 
-        {/* Approval gate — rendered in place of everything else */}
+        {/* Modals — rendered in place of everything else */}
         {pendingMission && (
           <ApprovalView
             mission={pendingMission}
@@ -86,7 +87,16 @@ const App = () => {
           />
         )}
 
-        {!pendingMission && view === 'dashboard' && (
+        {pendingIntervention && (
+          <InterventionView
+            taskId={pendingIntervention.taskId}
+            error={pendingIntervention.error}
+            question={pendingIntervention.question}
+            onResolve={resolveIntervention}
+          />
+        )}
+
+        {!pendingMission && !pendingIntervention && view === 'dashboard' && (
           <Dashboard
             mission={mission}
             isPlanning={isPlanning}
@@ -95,12 +105,12 @@ const App = () => {
           />
         )}
 
-        {!pendingMission && view === 'mission' && mission && (
+        {!pendingMission && !pendingIntervention && view === 'mission' && mission && (
           <MissionView mission={mission} />
         )}
 
-        {!pendingMission && view === 'task' && (
-          <TaskView events={events} />
+        {!pendingMission && !pendingIntervention && view === 'task' && (
+          <TaskView events={events} isExecuting={isExecuting} />
         )}
 
         {isIdle && (

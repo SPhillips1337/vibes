@@ -62,16 +62,23 @@ Rules:
       { role: 'user', content: `Begin task: ${task.title}` },
     ];
 
-    let currentTask: Task = { ...task, status: 'in_progress' };
+    // If the user replied with guidance via intervention, inject it
+    if (task.userGuidance) {
+      messages.push({ role: 'user', content: `[USER GUIDANCE]: ${task.userGuidance}` });
+      log(`Injecting user guidance: ${task.userGuidance}`, 'INFO');
+    }
 
-    for (let step = 0; step < config.MAX_STEPS; step++) {
+    let currentTask: Task = { ...task, status: 'in_progress' };
+    const maxSteps = config.MAX_STEPS + (task.extraSteps || 0);
+
+    for (let step = 0; step < maxSteps; step++) {
       try {
         // Compress context if approaching the window limit
         messages = compressMessages(messages);
 
         // Log context usage
         const stats = getContextStats(messages);
-        log(`Context usage: ~${stats.used}/${stats.usable} tokens (${stats.percentage}%) [step ${step + 1}/${config.MAX_STEPS}]`, 'DEBUG');
+        log(`Context usage: ~${stats.used}/${stats.usable} tokens (${stats.percentage}%) [step ${step + 1}/${maxSteps}]`, 'DEBUG');
         onEvent?.({ type: 'context_update', used: stats.used, total: stats.usable, percentage: stats.percentage });
 
         const response = await ollama.chat.completions.create({

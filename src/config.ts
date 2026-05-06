@@ -10,7 +10,7 @@ const ConfigSchema = z.object({
   CONTEXT_WINDOW: z.coerce.number().default(32768),
   MAX_STEPS: z.coerce.number().default(25),
   THINKING_MODE: z.string().transform(v => v === 'enabled').default('enabled'),
-  MAX_CONCURRENT_TASKS: z.coerce.number().default(2),
+  MAX_CONCURRENT_TASKS: z.coerce.number().default(1),
   MEMORY_ENABLED: z.string().transform(v => v !== 'false').default('true'),
   MEMORY_USER_ID: z.string().default('default'),
   MULTI_AGENT_ENABLED: z.string().transform(v => v === 'true').default('false'),

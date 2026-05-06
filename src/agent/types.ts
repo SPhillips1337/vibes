@@ -13,6 +13,10 @@ export const TaskSchema = z.object({
   status: TaskStatusSchema.default('todo'),
   output: z.string().optional(),
   error: z.string().optional(),
+  // Set by intervention system when user replies with guidance
+  userGuidance: z.string().optional(),
+  // Extra steps granted on retry (added to MAX_STEPS)
+  extraSteps: z.number().optional(),
 });
 
 export type Task = z.infer<typeof TaskSchema>;
@@ -32,7 +36,7 @@ export const MissionSchema = z.object({
   description: z.string(),
   workspace_root: z.string().default(process.cwd()),
   milestones: z.array(MilestoneSchema),
-  status: z.enum(['planning', 'executing', 'completed', 'failed']).default('planning'),
+  status: z.enum(['planning', 'executing', 'completed', 'failed', 'awaiting_intervention']).default('planning'),
 });
 
 export type Mission = z.infer<typeof MissionSchema>;
@@ -49,6 +53,7 @@ export type ExecutionEvent =
   | { type: 'tool_result'; tool: string; result: ToolResult }
   | { type: 'output'; content: string }
   | { type: 'error'; message: string }
-  | { type: 'context_update'; used: number; total: number; percentage: number };
+  | { type: 'context_update'; used: number; total: number; percentage: number }
+  | { type: 'intervention_required'; taskId: string; error: string; question: string };
 
 export type OnEvent = (event: ExecutionEvent) => void;

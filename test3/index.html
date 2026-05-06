@@ -4,10 +4,27 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Sudoku</title>
-    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-    <div class="sudoku-board" id="board"></div>
-    <script src="script.js"></script>
+    <main class="sudoku-app">
+        <header>
+            <h1>Sudoku</h1>
+        </header>
+
+        <section id="board" class="sudoku-board" aria-label="Sudoku grid"></section>
+
+        <nav class="controls" aria-label="Game controls">
+            <button type="button" id="btn-start">Start</button>
+            <button type="button" id="btn-reset">Reset</button>
+            <button type="button" id="btn-check">Check</button>
+        </nav>
+
+        <section class="status" aria-live="polite">
+            <p id="message"></p>
+        </section>
+    </main>
+
+    <script src="app.js"></script>
 </body>
 </html>
