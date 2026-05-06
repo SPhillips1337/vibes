@@ -2,11 +2,13 @@ import React from 'react';
 import { render, Box, Text, useInput, useApp } from 'ink';
 import { TextInput } from '@inkjs/ui';
 import { useMission } from './tui/hooks/use-mission.js';
+import { useUpdateCheck } from './tui/hooks/use-update-check.js';
 import { Dashboard } from './tui/components/dashboard.js';
 import { MissionView } from './tui/components/mission-view.js';
 import { TaskView } from './tui/components/task-view.js';
 import { ApprovalView } from './tui/components/approval-view.js';
 import { InterventionView } from './tui/components/intervention-view.js';
+import { UpdateNotification } from './tui/components/update-notification.js';
 import { initLogger } from './logger.js';
 import { config } from './config.js';
 import path from 'path';
@@ -20,6 +22,11 @@ const App = () => {
   } = useMission();
 
   const { exit } = useApp();
+  const {
+    updateInfo, status: updateStatus, error: updateError,
+    dismissed: updateDismissed, updateLog,
+    performUpdate, dismiss: dismissUpdate, resetStatus: resetUpdateStatus,
+  } = useUpdateCheck();
   const [workspace, setWorkspace] = React.useState(process.cwd());
   const [view, setView] = React.useState<'dashboard' | 'mission' | 'task'>('dashboard');
   const [focusIndex, setFocusIndex] = React.useState(0);
@@ -27,8 +34,18 @@ const App = () => {
   useInput((input, key) => {
     if (key.ctrl && input === 'q') exit();
 
-    // Suppress nav/toggle keys while modal views or setup form are active
-    if (pendingMission || pendingIntervention) return;
+    // Update notification keys (always available)
+    if (input === 'u' && updateInfo?.available && !updateDismissed && updateStatus === 'idle') {
+      performUpdate();
+      return;
+    }
+    if (input === 'x' && updateInfo?.available && !updateDismissed) {
+      dismissUpdate();
+      return;
+    }
+
+    // Suppress nav/toggle keys while modal views, setup form, or update process are active
+    if (pendingMission || pendingIntervention || updateStatus === 'updating') return;
 
     if (key.meta && !isIdle) {
       if (input === 'd') { setView('dashboard'); return; }
@@ -76,6 +93,18 @@ const App = () => {
           <Text color="yellow" bold inverse> ⚡ YOLO MODE ENABLED — NO STEP LIMITS ⚡ </Text>
         </Box>
       )}
+
+      {/* Update Notification */}
+      <UpdateNotification
+        updateInfo={updateInfo}
+        status={updateStatus}
+        error={updateError}
+        dismissed={updateDismissed}
+        updateLog={updateLog}
+        onUpdate={performUpdate}
+        onDismiss={dismissUpdate}
+        onReset={resetUpdateStatus}
+      />
 
       {/* Main Content */}
       <Box flexDirection="column" minHeight={15} marginTop={1}>

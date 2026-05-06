@@ -36,7 +36,7 @@ export const readFileTool: ToolDefinition = {
   execute: async ({ path: filePath, encoding }, context): Promise<ToolResult> => {
     try {
       const fullPath = resolvePath(context?.workspaceRoot || process.cwd(), filePath);
-      const content = await fs.readFile(fullPath, encoding as BufferEncoding);
+      const content = await fs.readFile(fullPath, (encoding as BufferEncoding) || 'utf8');
       return { success: true, data: content };
     } catch (error: any) {
       return { success: false, error: error.message };

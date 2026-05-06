@@ -141,13 +141,29 @@ Rules:
             }
 
             const tool = this.tools.find(t => t.name === toolCall.function.name);
+            let validatedArgs = args;
 
             if (tool) {
               try {
-                result = await tool.execute(args, { workspaceRoot });
+                // Validate and apply defaults via Zod
+                const parseResult = tool.parameters.safeParse(args);
+                if (parseResult.success) {
+                  validatedArgs = parseResult.data;
+                } else {
+                  result = { success: false, error: `Invalid tool arguments: ${parseResult.error.message}` };
+                  onEvent?.({ type: 'tool_result', tool: toolCall.function.name, result });
+                  messages.push({
+                    role: 'tool',
+                    tool_call_id: toolCall.id,
+                    content: JSON.stringify(result),
+                  });
+                  continue;
+                }
+
+                result = await tool.execute(validatedArgs, { workspaceRoot });
                 
                 if (this.memory.isEnabled()) {
-                  await this.memory.addToolUsage(toolCall.function.name, args, result);
+                  await this.memory.addToolUsage(toolCall.function.name, validatedArgs, result);
                 }
               } catch (error: any) {
                 result = { success: false, error: `Execution error: ${error.message}` };

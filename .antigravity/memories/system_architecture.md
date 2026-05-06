@@ -24,6 +24,11 @@ A "no-limits" execution mode.
 ### 4. Context Management
 - **Token Budget:** Optimized for 32K context windows.
 - **Concurrency:** `MAX_CONCURRENT_TASKS` is default to `1` to prevent LM Studio context-splitting errors (400 Bad Request) and file write collisions.
+27: 
+28: ### 5. Update Notification System
+29: - **Polling:** Uses a background polling mechanism (every 5 mins) to check the GitHub API for new commits on the `main` branch.
+- **One-Click Rebuild:** Provides an interactive `[U]` shortcut that automates `git pull`, `npm install`, and `npm run build`.
+- **Live Feedback:** Displays a persistent log within the TUI during the update process to keep the user informed of progress and potential errors.
 
 ## Critical Patterns for Future Agents
 - **Always use `ref` for Scheduler state:** React state is for the UI; the Scheduler needs direct access to mutable objects to avoid "ghost retries" (where settings like `extraSteps` are lost).
@@ -35,3 +40,4 @@ A "no-limits" execution mode.
 - Fixed "ghost retry" bug by moving resolution logic into the Scheduler via Promises.
 - Added YOLO Mode with live toggling via `Alt+Y`.
 - Fixed Meta-key leakage (Alt+Y typing 'y') by guarding shortcuts with `!isIdle`.
+- Implemented Git Update Notification system with GitHub API polling and automated rebuild flow (`U` key).
