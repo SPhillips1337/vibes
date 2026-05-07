@@ -143,12 +143,12 @@ export const UpdateNotification: React.FC<UpdateNotificationProps> = ({
       <Box marginTop={1} gap={3}>
         <Box gap={1}>
           <Text color="gray">Press </Text>
-          <Text color="green" bold>[U]</Text>
+          <Text color="green" bold>[Alt+U]</Text>
           <Text color="gray"> to update & rebuild</Text>
         </Box>
         <Box gap={1}>
           <Text color="gray">Press </Text>
-          <Text color="yellow" bold>[X]</Text>
+          <Text color="yellow" bold>[Alt+X]</Text>
           <Text color="gray"> to dismiss</Text>
         </Box>
       </Box>

@@ -36,21 +36,21 @@ const App = () => {
   useInput((input, key) => {
     if (key.ctrl && input === 'q') exit();
 
-    // Suppress global shortcuts while typing in a text field
+    // Update notification keys (priority, use Alt to avoid typing conflict)
+    if (key.meta && input === 'u' && updateInfo?.available && !updateDismissed && updateStatus === 'idle') {
+      performUpdate();
+      return;
+    }
+    if (key.meta && input === 'x' && updateInfo?.available && !updateDismissed) {
+      dismissUpdate();
+      return;
+    }
+
+    // Suppress other global shortcuts while typing in a text field
     const isTyping = isIdle; 
     if (isTyping) {
       if (key.tab) setFocusIndex(prev => (prev === 0 ? 1 : 0));
       return; 
-    }
-
-    // Update notification keys (only if not typing)
-    if (input === 'u' && updateInfo?.available && !updateDismissed && updateStatus === 'idle') {
-      performUpdate();
-      return;
-    }
-    if (input === 'x' && updateInfo?.available && !updateDismissed) {
-      dismissUpdate();
-      return;
     }
 
     // Suppress nav/toggle keys while modal views or update process are active

@@ -14,9 +14,17 @@
 - **Pattern:** Store all volatile files (logs, temp data) in hidden directories (like `.vibes/`) and explicitly exclude them from dev watchers (`tsx watch --exclude .vibes`).
 - **Why it works:** Prevents "Infinite Restart Loops" where the app's own activity (logging) triggers the watcher to restart the app.
 
-### 4. Controlled Buffer Safety
-- **Pattern:** Always enforce string encoding (UTF-8) in file-reading tools and validate arguments using Zod.
-- **Why it works:** Prevents "Buffer Explosion" where files are read as raw byte arrays, leading to 10x token bloat and crashing context windows.
+### 5. Auto-Git "Time Travel" (Safety Net)
+- **Pattern:** Automatically run `git commit` before mission execution and provide a one-key `undo` (`git reset --hard HEAD~1`).
+- **Why it works:** It removes the "fear of failure" for both the user and the agent. If the agent makes a massive logic error or botches a complex refactor, the user can instantly restore the workspace without manual cleanup.
+
+### 6. Logic-Level Thrashing Detection
+- **Pattern:** Keep a rolling hash of the last N tool calls and trigger human intervention if the same failing action is repeated 3 times.
+- **Why it works:** Prevents agents from "spinning" and burning through expensive context windows or local compute when they get stuck in a logic loop.
+
+### 7. Shortcut Priority Hierarchy
+- **Pattern:** Position global system shortcuts (with modifiers like `Alt`) ABOVE the text-input suppression guards in the input handler.
+- **Why it works:** Allows the user to perform system actions (like Updating or Undoing) even while the cursor is focused in an active `TextInput` field, without characters leaking into the input.
 
 ## 🔴 Failure Lessons (Drag)
 
