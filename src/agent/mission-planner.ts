@@ -58,7 +58,8 @@ Structure:
           "title": "Task Title",
           "description": "Actionable steps",
           "files": ["file/path"],
-          "acceptance_criteria": ["criteria 1", "criteria 2"]
+          "acceptance_criteria": ["criteria 1", "criteria 2"],
+          "model": "optional_model_name"
         }
       ]
     }
@@ -70,6 +71,7 @@ Constraints:
 2. MAX 5 tasks per milestone.
 3. Keep descriptions very short.
 4. Focus on the primary goal first.
+5. If a task is particularly complex (e.g. refactoring core logic, multi-file changes), suggest a more powerful model if available (e.g. gemma2:27b or similar).
 5. No extra text or preamble.
 6. STOP when the acceptance criteria are met. Do not add extra polish, build pipelines, or deployment steps unless explicitly requested.
 

@@ -8,13 +8,15 @@
   "scripts": {
     "build": "tsc",
     "start": "tsx --no-warnings src/index.tsx",
-    "dev": "tsx watch --no-warnings --exclude .vibes --exclude dist --clear-screen=false src/index.tsx"
+    "dev": "tsx watch --no-warnings --exclude .vibes --exclude dist --clear-screen=false src/index.tsx",
+    "mcp-server": "tsx --no-warnings src/mcp/server.ts"
   },
   "dependencies": {
     "@inkjs/ui": "^2.0.0",
     "@types/glob": "^8.1.0",
     "chalk": "^5.4.1",
     "dotenv": "^16.4.7",
+    "fastmcp": "^4.0.1",
     "glob": "^11.0.1",
     "gpt-tokenizer": "^3.4.0",
     "ink": "^6.0.0",

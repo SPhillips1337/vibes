@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Box, Text } from 'ink';
 import { Mission } from '../../agent/types.js';
+import os from 'os';
 
 interface DashboardProps {
   mission: Mission | null;
@@ -12,19 +13,38 @@ interface DashboardProps {
 
 export const Dashboard: React.FC<DashboardProps> = ({ mission, isPlanning, isExecuting, isYoloMode, contextUsage }) => {
   const [dots, setDots] = useState('');
+  const [systemInfo, setSystemInfo] = useState({
+    cpu: 0,
+    mem: 0,
+    freeMem: 0,
+    totalMem: 0,
+  });
 
-  // Heartbeat animation
+  // Heartbeat animation and system info refresh
   useEffect(() => {
-    if (!isExecuting && !isPlanning) {
-      setDots('');
-      return;
-    }
     const interval = setInterval(() => {
-      setDots(prev => {
-        if (prev === '...') return '';
-        return prev + '.';
+      if (isExecuting || isPlanning) {
+        setDots(prev => (prev === '...' ? '' : prev + '.'));
+      }
+
+      // Update system info
+      const totalMem = os.totalmem();
+      const freeMem = os.freemem();
+      const usedMem = totalMem - freeMem;
+      const memPct = Math.round((usedMem / totalMem) * 100);
+      
+      // Simple load avg for CPU proxy
+      const load = os.loadavg()[0];
+      const cpuPct = Math.min(Math.round((load / os.cpus().length) * 100), 100);
+
+      setSystemInfo({
+        cpu: cpuPct,
+        mem: memPct,
+        freeMem: Math.round(freeMem / (1024 * 1024 * 1024) * 10) / 10,
+        totalMem: Math.round(totalMem / (1024 * 1024 * 1024) * 10) / 10,
       });
-    }, 500);
+    }, 1000);
+
     return () => clearInterval(interval);
   }, [isExecuting, isPlanning]);
 
@@ -34,7 +54,13 @@ export const Dashboard: React.FC<DashboardProps> = ({ mission, isPlanning, isExe
         {isPlanning ? (
           <Text color="yellow">Planning mission{dots} Analyzing goals and breaking down tasks.</Text>
         ) : (
-          <Text color="gray">No active mission. Enter a mission description to begin.</Text>
+          <Box flexDirection="column">
+            <Text color="gray">No active mission. Enter a mission description to begin.</Text>
+            <Box marginTop={1} gap={2}>
+              <Text dimColor>CPU: {systemInfo.cpu}%</Text>
+              <Text dimColor>MEM: {systemInfo.mem}% ({systemInfo.totalMem - systemInfo.freeMem}GB/{systemInfo.totalMem}GB)</Text>
+            </Box>
+          </Box>
         )}
       </Box>
     );
@@ -103,6 +129,19 @@ export const Dashboard: React.FC<DashboardProps> = ({ mission, isPlanning, isExe
           )}
         </Box>
       )}
+
+      {/* System Resources */}
+      <Box paddingTop={1} gap={2}>
+        <Box>
+          <Text>CPU: </Text>
+          <Text color={systemInfo.cpu > 80 ? 'red' : systemInfo.cpu > 50 ? 'yellow' : 'green'}>{systemInfo.cpu}%</Text>
+        </Box>
+        <Box>
+          <Text>MEM: </Text>
+          <Text color={systemInfo.mem > 90 ? 'red' : systemInfo.mem > 70 ? 'yellow' : 'green'}>{systemInfo.mem}%</Text>
+          <Text color="gray" dimColor> ({Math.round((systemInfo.totalMem - systemInfo.freeMem) * 10) / 10}GB/{systemInfo.totalMem}GB)</Text>
+        </Box>
+      </Box>
 
       {isExecuting && (
         <Box paddingTop={1}>

@@ -120,7 +120,20 @@ export class Scheduler {
       this.updateTaskInMission(updatedTask);
 
       if (updatedTask.status === 'done') {
-        this.completedTasks.add(task.id);
+        // Optional Review Step
+        const { Reviewer } = await import('./reviewer.js');
+        const reviewer = new Reviewer();
+        const review = await reviewer.reviewTask(updatedTask, this.mission);
+        
+        if (review.approved) {
+          log(`Task approved by reviewer: ${updatedTask.title}`, 'INFO');
+          this.completedTasks.add(task.id);
+        } else {
+          log(`Task REJECTED by reviewer: ${updatedTask.title}. Feedback: ${review.feedback}`, 'WARN');
+          updatedTask.status = 'failed';
+          updatedTask.error = `Review Rejected: ${review.feedback}`;
+          await this.handleTaskFailure(updatedTask);
+        }
       } else {
         await this.handleTaskFailure(updatedTask);
       }

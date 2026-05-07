@@ -8,6 +8,7 @@ import { shellTool } from '../../tools/shell-tool.js';
 import { editFileTool } from '../../tools/file-edit.js';
 import { log } from '../../logger.js';
 import { config } from '../../config.js';
+import { getMCPService } from '../../mcp/mcp-service.js';
 
 export const useMission = () => {
   const [mission, setMission] = useState<Mission | null>(null);
@@ -72,6 +73,13 @@ export const useMission = () => {
     }
 
     try {
+      const { searchSymbolsTool } = await import('../../tools/index-tools.js');
+      const { loadPluginTools } = await import('../../tools/plugin-loader.js');
+      const { getMCPTools } = await import('../../mcp/index.js');
+      
+      const mcpTools = getMCPTools();
+      const pluginTools = await loadPluginTools(plan.workspace_root);
+
       const tools = [
         listDirTool, 
         readFileTool, 
@@ -80,7 +88,10 @@ export const useMission = () => {
         globTool, 
         shellTool,
         fileOutlineTool,
-        readLinesTool
+        readLinesTool,
+        searchSymbolsTool,
+        ...mcpTools,
+        ...pluginTools
       ];
       const executor = new TaskExecutor(tools);
 
@@ -104,6 +115,22 @@ export const useMission = () => {
 
       const scheduler = new Scheduler(plan, executor, onEvent, () => isYoloRef.current);
       schedulerRef.current = scheduler;
+
+      // Dynamic Proxy Handshake: Prime the proxy with task context
+      try {
+        const mcpService = getMCPService();
+        const proxyClient = mcpService.getClients().get('dynamic-proxy');
+        if (proxyClient) {
+          log('Priming Dynamic MCP Proxy...', 'INFO');
+          await proxyClient.callTool('proxy_handshake', {
+            tech_stack: ['typescript', 'node', 'react', 'ink'],
+            task_description: plan.description
+          });
+        }
+      } catch (err) {
+        log(`Proxy handshake failed: ${err instanceof Error ? err.message : String(err)}`, 'DEBUG');
+      }
+
       const completedMission = await scheduler.run();
       setMission({ ...completedMission });
     } catch (err: any) {

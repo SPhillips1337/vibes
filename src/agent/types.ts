@@ -17,6 +17,8 @@ export const TaskSchema = z.object({
   userGuidance: z.string().optional(),
   // Extra steps granted on retry (added to MAX_STEPS)
   extraSteps: z.number().optional(),
+  // Model override for this task (e.g. for high-difficulty tasks)
+  model: z.string().optional(),
 });
 
 export type Task = z.infer<typeof TaskSchema>;

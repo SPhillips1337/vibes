@@ -84,6 +84,7 @@ export const shellTool: ToolDefinition = {
       const workspaceRoot = context?.workspaceRoot || process.cwd();
       const { stdout: rawOut, stderr: rawErr } = await execAsync(command, { 
         timeout,
+        killSignal: 'SIGKILL',
         cwd: workspaceRoot,
       });
 

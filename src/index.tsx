@@ -3,14 +3,15 @@ import { render, Box, Text, useInput, useApp } from 'ink';
 import { TextInput } from '@inkjs/ui';
 import { useMission } from './tui/hooks/use-mission.js';
 import { useUpdateCheck } from './tui/hooks/use-update-check.js';
+import { useSettings } from './tui/hooks/use-settings.js';
 import { Dashboard } from './tui/components/dashboard.js';
 import { MissionView } from './tui/components/mission-view.js';
 import { TaskView } from './tui/components/task-view.js';
+import { SettingsView } from './tui/components/settings-view.js';
 import { ApprovalView } from './tui/components/approval-view.js';
 import { InterventionView } from './tui/components/intervention-view.js';
 import { UpdateNotification } from './tui/components/update-notification.js';
 import { initLogger } from './logger.js';
-import { config } from './config.js';
 import path from 'path';
 
 const App = () => {
@@ -27,8 +28,11 @@ const App = () => {
     dismissed: updateDismissed, updateLog,
     performUpdate, dismiss: dismissUpdate, resetStatus: resetUpdateStatus,
   } = useUpdateCheck();
+
+  const { settings, availableModels, saveSettings } = useSettings();
+
   const [workspace, setWorkspace] = React.useState(process.cwd());
-  const [view, setView] = React.useState<'dashboard' | 'mission' | 'task'>('dashboard');
+  const [view, setView] = React.useState<'dashboard' | 'mission' | 'task' | 'settings'>('dashboard');
   const [focusIndex, setFocusIndex] = React.useState(0);
 
   const isIdle = !mission && !isPlanning && !pendingMission;
@@ -47,7 +51,7 @@ const App = () => {
     }
 
     // Suppress other global shortcuts while typing in a text field
-    const isTyping = isIdle; 
+    const isTyping = isIdle && view !== 'settings'; 
     if (isTyping) {
       if (key.tab) setFocusIndex(prev => (prev === 0 ? 1 : 0));
       return; 
@@ -60,6 +64,7 @@ const App = () => {
       if (input === 'd') { setView('dashboard'); return; }
       if (input === 'm') { setView('mission'); return; }
       if (input === 't') { setView('task'); return; }
+      if (input === 's') { setView(prev => prev === 'settings' ? 'dashboard' : 'settings'); return; }
       if (input === 'y') { toggleYoloMode(); return; }
       if (input === 'n') {
         resetMission();
@@ -84,7 +89,7 @@ const App = () => {
     }
   };
 
-  const contextKB = Math.round(config.CONTEXT_WINDOW / 1024);
+  const contextKB = Math.round(settings.CONTEXT_WINDOW / 1024);
 
   return (
     <Box flexDirection="column" padding={1}>
@@ -94,13 +99,17 @@ const App = () => {
         <Box gap={2}>
           {!pendingMission && !pendingIntervention && !isIdle && (
             <>
-              <Text color={view === 'dashboard' ? 'white' : 'blue'}>[Alt+D] Dashboard</Text>
+              <Text color={view === 'dashboard' ? 'white' : 'blue'}>[Alt+D] Dash</Text>
               <Text color={view === 'mission' ? 'white' : 'blue'}>[Alt+M] Mission</Text>
-              <Text color={view === 'task' ? 'white' : 'blue'}>[Alt+T] Task View</Text>
-              <Text color="green">[Alt+N] New Mission</Text>
-              <Text color="red">[Alt+Z] Undo Mission</Text>
-              <Text color={isYoloMode ? 'yellow' : 'blue'} bold={isYoloMode}>[Alt+Y] YOLO {isYoloMode ? 'ON' : 'OFF'}</Text>
+              <Text color={view === 'task' ? 'white' : 'blue'}>[Alt+T] Task</Text>
+              <Text color={view === 'settings' ? 'white' : 'blue'}>[Alt+S] Settings</Text>
+              <Text color="green">[Alt+N] New</Text>
+              <Text color="red">[Alt+Z] Undo</Text>
+              <Text color={isYoloMode ? 'yellow' : 'blue'} bold={isYoloMode}>[Alt+Y] YOLO</Text>
             </>
+          )}
+          {isIdle && (
+            <Text color={view === 'settings' ? 'white' : 'blue'}>[Alt+S] Settings</Text>
           )}
           <Text color="red">[Ctrl+Q] Quit</Text>
         </Box>
@@ -154,6 +163,15 @@ const App = () => {
           />
         )}
 
+        {view === 'settings' && (
+          <SettingsView
+            settings={settings}
+            availableModels={availableModels}
+            onSave={saveSettings}
+            onClose={() => setView('dashboard')}
+          />
+        )}
+
         {!pendingMission && !pendingIntervention && view === 'dashboard' && (
           <Dashboard
             mission={mission}
@@ -172,7 +190,7 @@ const App = () => {
           <TaskView events={events} isExecuting={isExecuting} />
         )}
 
-        {isIdle && (
+        {isIdle && view !== 'settings' && (
           <Box flexDirection="column" marginTop={1}>
             <Box marginBottom={1} flexDirection="column">
               <Box gap={1}>
@@ -222,14 +240,16 @@ const App = () => {
 
       {/* Footer */}
       <Box marginTop={1} borderStyle="single" borderColor="gray" paddingX={1} justifyContent="space-between">
-        <Text color="gray">Model: {config.OLLAMA_MODEL}</Text>
-        <Text color="gray">
-          Context: {contextKB}K tokens | Max Steps: 
-        </Text>
-        <Text color={isYoloMode || activeMaxSteps > config.MAX_STEPS ? 'yellow' : 'gray'} bold={isYoloMode || activeMaxSteps > config.MAX_STEPS}>
-          {isYoloMode ? '∞' : activeMaxSteps}{!isYoloMode && activeMaxSteps > config.MAX_STEPS ? ` (+${activeMaxSteps - config.MAX_STEPS})` : ''}
-        </Text>
-        <Text color="gray"> | Concurrent: {config.MAX_CONCURRENT_TASKS}</Text>
+        <Text color="gray">Model: {settings.OLLAMA_MODEL}</Text>
+        <Box>
+          <Text color="gray">
+            Context: {contextKB}K tokens | Max Steps: 
+          </Text>
+          <Text color={isYoloMode || activeMaxSteps > settings.MAX_STEPS ? 'yellow' : 'gray'} bold={isYoloMode || activeMaxSteps > settings.MAX_STEPS}>
+            {isYoloMode ? '∞' : activeMaxSteps}{!isYoloMode && activeMaxSteps > settings.MAX_STEPS ? ` (+${activeMaxSteps - settings.MAX_STEPS})` : ''}
+          </Text>
+          <Text color="gray"> | Concurrent: {settings.MAX_CONCURRENT_TASKS}</Text>
+        </Box>
       </Box>
     </Box>
   );

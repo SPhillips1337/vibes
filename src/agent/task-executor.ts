@@ -121,8 +121,9 @@ ${memoriesSection}`;
         log(`Context usage: ~${stats.used}/${stats.usable} tokens (${stats.percentage}%) [step ${step + 1}/${currentMax}]`, 'DEBUG');
         onEvent?.({ type: 'context_update', used: stats.used, total: stats.usable, percentage: stats.percentage });
 
+        const taskModel = task.model || MODEL;
         const response = await ollama.chat.completions.create({
-          model: MODEL,
+          model: taskModel,
           messages,
           tools: this.tools.map(toOpenAITool),
           temperature: isYoloNow ? 0.9 : 0.7, // YOLO Mode Enhancement: more creative
@@ -158,17 +159,19 @@ ${memoriesSection}`;
             // Thrashing Detection Hack
             const callHash = `${toolCall.function.name}:${toolCall.function.arguments}`;
             this.callHistory.push(callHash);
-            if (this.callHistory.length > 10) this.callHistory.shift();
+            if (this.callHistory.length > 20) this.callHistory.shift(); // Increased history buffer
 
             const repeats = this.callHistory.filter(h => h === callHash).length;
-            if (repeats >= 3) {
+            const thrashThreshold = isYoloNow ? 10 : 3; // Much higher threshold in YOLO mode
+
+            if (repeats >= thrashThreshold) {
               const thrashMsg = `Agent is thrashing! It has attempted the same tool call (${toolCall.function.name}) ${repeats} times with the same arguments.`;
               log(thrashMsg, 'WARN');
               onEvent?.({ 
                 type: 'intervention_required', 
                 taskId: task.id, 
                 error: 'Infinite Loop Detected', 
-                question: `${thrashMsg} Should I stop it or do you have specific guidance?` 
+                question: `${thrashMsg} ${isYoloNow ? 'Even in YOLO mode, this looks like a loop.' : ''} Should I stop it or do you have specific guidance?` 
               });
               
               // We stop execution for this task and wait for intervention resolution

@@ -202,6 +202,23 @@ export class MCPService {
     this.loadServers();
   }
 
+  private expandEnvVars(value: any): any {
+    if (typeof value === 'string') {
+      return value.replace(/\${([^}]+)}/g, (_, name) => process.env[name] || '');
+    }
+    if (Array.isArray(value)) {
+      return value.map(item => this.expandEnvVars(item));
+    }
+    if (value && typeof value === 'object') {
+      const expanded: any = {};
+      for (const [k, v] of Object.entries(value)) {
+        expanded[k] = this.expandEnvVars(v);
+      }
+      return expanded;
+    }
+    return value;
+  }
+
   private async loadServers() {
     if (!fs.existsSync(this.mcpConfigPath)) {
       log(`MCP config not found: ${this.mcpConfigPath}`, 'DEBUG');
@@ -210,10 +227,13 @@ export class MCPService {
 
     try {
       const content = fs.readFileSync(this.mcpConfigPath, 'utf-8');
-      const config = JSON.parse(content);
+      const rawConfig = JSON.parse(content);
+      
+      // Expand environment variables in the config (e.g. ${GITHUB_TOKEN})
+      const config = this.expandEnvVars(rawConfig);
 
-      if (config.servers && typeof config.servers === 'object') {
-        for (const [name, serverConfig] of Object.entries(config.servers)) {
+      if (config.mcpServers && typeof config.mcpServers === 'object') {
+        for (const [name, serverConfig] of Object.entries(config.mcpServers)) {
           const client = new MCPClient({
             name,
             ...serverConfig as any,

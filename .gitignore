@@ -35,8 +35,8 @@ AGENTS.md
 PLAN.md
 
 # Vibes Agent
+.vibes/
 .vibes-backups/
 *.pem
 *.key
 deploy/
-test3
