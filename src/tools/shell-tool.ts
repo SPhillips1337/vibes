@@ -92,13 +92,18 @@ export const shellTool: ToolDefinition = {
 
       return { success: true, data: { stdout, stderr } };
     } catch (error: any) {
+      const stdout = truncateOutput(error.stdout ?? '', 'stdout');
+      const stderr = truncateOutput(error.stderr ?? '', 'stderr');
+      
+      // Combine error message with output for better agent visibility
+      let detailedError = error.message;
+      if (stderr) detailedError += `\n\n[STDERR]:\n${stderr}`;
+      if (stdout) detailedError += `\n\n[STDOUT]:\n${stdout}`;
+
       return {
         success: false,
-        error: error.message,
-        data: {
-          stdout: truncateOutput(error.stdout ?? '', 'stdout'),
-          stderr: truncateOutput(error.stderr ?? '', 'stderr'),
-        },
+        error: detailedError,
+        data: { stdout, stderr },
       };
     }
   },
