@@ -18,7 +18,7 @@ const App = () => {
     mission, pendingMission, isPlanning, isExecuting,
     error, events, contextUsage, pendingIntervention, activeMaxSteps,
     isYoloMode, toggleYoloMode,
-    startMission, approveMission, rejectMission, resolveIntervention,
+    startMission, approveMission, rejectMission, resolveIntervention, resetMission, undoMission,
   } = useMission();
 
   const { exit } = useApp();
@@ -31,11 +31,13 @@ const App = () => {
   const [view, setView] = React.useState<'dashboard' | 'mission' | 'task'>('dashboard');
   const [focusIndex, setFocusIndex] = React.useState(0);
 
+  const isIdle = !mission && !isPlanning && !pendingMission;
+
   useInput((input, key) => {
     if (key.ctrl && input === 'q') exit();
 
     // Suppress global shortcuts while typing in a text field
-    const isTyping = isIdle; // In idle state, we have focusable text inputs
+    const isTyping = isIdle; 
     if (isTyping) {
       if (key.tab) setFocusIndex(prev => (prev === 0 ? 1 : 0));
       return; 
@@ -59,6 +61,17 @@ const App = () => {
       if (input === 'm') { setView('mission'); return; }
       if (input === 't') { setView('task'); return; }
       if (input === 'y') { toggleYoloMode(); return; }
+      if (input === 'n') {
+        resetMission();
+        setView('dashboard');
+        setFocusIndex(1);
+        return;
+      }
+      if (input === 'z') {
+        undoMission();
+        setView('dashboard');
+        return;
+      }
     }
   });
 
@@ -71,7 +84,6 @@ const App = () => {
     }
   };
 
-  const isIdle = !mission && !isPlanning && !pendingMission;
   const contextKB = Math.round(config.CONTEXT_WINDOW / 1024);
 
   return (
@@ -85,6 +97,8 @@ const App = () => {
               <Text color={view === 'dashboard' ? 'white' : 'blue'}>[Alt+D] Dashboard</Text>
               <Text color={view === 'mission' ? 'white' : 'blue'}>[Alt+M] Mission</Text>
               <Text color={view === 'task' ? 'white' : 'blue'}>[Alt+T] Task View</Text>
+              <Text color="green">[Alt+N] New Mission</Text>
+              <Text color="red">[Alt+Z] Undo Mission</Text>
               <Text color={isYoloMode ? 'yellow' : 'blue'} bold={isYoloMode}>[Alt+Y] YOLO {isYoloMode ? 'ON' : 'OFF'}</Text>
             </>
           )}

@@ -6,6 +6,7 @@ import { Scheduler, InterventionResolution } from '../../agent/scheduler.js';
 import { listDirTool, readFileTool, writeFileTool, globTool, fileOutlineTool, readLinesTool } from '../../tools/file-tools.js';
 import { shellTool } from '../../tools/shell-tool.js';
 import { editFileTool } from '../../tools/file-edit.js';
+import { log } from '../../logger.js';
 import { config } from '../../config.js';
 
 export const useMission = () => {
@@ -57,6 +58,18 @@ export const useMission = () => {
     setPendingMission(null);
     setMission(plan);
     setIsExecuting(true);
+    
+    // Auto-Git Snapshot Hack: Create a pre-mission snapshot for "Time Travel" / Undo
+    try {
+      const { execSync } = await import('child_process');
+      const isGit = execSync('git rev-parse --is-inside-work-tree', { cwd: plan.workspace_root }).toString().trim() === 'true';
+      if (isGit) {
+        log(`Creating pre-mission git snapshot for ${plan.id}`, 'INFO');
+        execSync(`git commit -am "vibes: pre-mission snapshot ${plan.id}" --allow-empty`, { cwd: plan.workspace_root });
+      }
+    } catch (err) {
+      log(`Git snapshot skipped: ${err instanceof Error ? err.message : String(err)}`, 'DEBUG');
+    }
 
     try {
       const tools = [
@@ -118,6 +131,30 @@ export const useMission = () => {
     setError(null);
   }, []);
 
+  const resetMission = useCallback(() => {
+    setMission(null);
+    setPendingMission(null);
+    setIsPlanning(false);
+    setIsExecuting(false);
+    setError(null);
+    setEvents([]);
+    setContextUsage(null);
+    setPendingIntervention(null);
+    setActiveMaxSteps(config.MAX_STEPS);
+  }, []);
+
+  const undoMission = useCallback(async () => {
+    if (!mission) return;
+    try {
+      const { execSync } = await import('child_process');
+      log(`Undoing mission ${mission.id} via git reset`, 'WARN');
+      execSync(`git reset --hard HEAD~1`, { cwd: mission.workspace_root });
+      resetMission();
+    } catch (err: any) {
+      setError(`Undo failed: ${err.message}`);
+    }
+  }, [mission, resetMission]);
+
   return {
     mission,
     pendingMission,
@@ -134,5 +171,7 @@ export const useMission = () => {
     rejectMission,
     resolveIntervention,
     toggleYoloMode,
+    resetMission,
+    undoMission,
   };
 };

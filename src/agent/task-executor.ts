@@ -16,6 +16,7 @@ export class TaskExecutor {
   private tools: ToolDefinition[];
   private memory = getMemoryService();
   private skills = getSkillsService();
+  private callHistory: string[] = []; // Stores hashes of recent tool calls
 
   constructor(tools: ToolDefinition[]) {
     this.tools = tools;
@@ -132,6 +133,27 @@ ${memoriesSection}`;
 
         if (message.tool_calls && message.tool_calls.length > 0) {
           for (const toolCall of message.tool_calls) {
+            // Thrashing Detection Hack
+            const callHash = `${toolCall.function.name}:${toolCall.function.arguments}`;
+            this.callHistory.push(callHash);
+            if (this.callHistory.length > 10) this.callHistory.shift();
+
+            const repeats = this.callHistory.filter(h => h === callHash).length;
+            if (repeats >= 3) {
+              const thrashMsg = `Agent is thrashing! It has attempted the same tool call (${toolCall.function.name}) ${repeats} times with the same arguments.`;
+              log(thrashMsg, 'WARN');
+              onEvent?.({ 
+                type: 'intervention_required', 
+                taskId: task.id, 
+                error: 'Infinite Loop Detected', 
+                question: `${thrashMsg} Should I stop it or do you have specific guidance?` 
+              });
+              
+              // We stop execution for this task and wait for intervention resolution
+              currentTask = { ...currentTask, status: 'todo' }; // Reset to todo so it can be resumed
+              return currentTask;
+            }
+
             let args: any;
             let result: ToolResult = { success: false, error: 'Unknown error' };
             let parsed = false;
