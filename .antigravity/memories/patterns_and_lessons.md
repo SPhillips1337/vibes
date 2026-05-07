@@ -15,8 +15,10 @@
 - **Why it works:** Prevents "Infinite Restart Loops" where the app's own activity (logging) triggers the watcher to restart the app.
 
 ### 5. Auto-Git "Time Travel" (Safety Net)
-- **Pattern:** Automatically run `git commit` before mission execution and provide a one-key `undo` (`git reset --hard HEAD~1`).
-- **Why it works:** It removes the "fear of failure" for both the user and the agent. If the agent makes a massive logic error or botches a complex refactor, the user can instantly restore the workspace without manual cleanup.
+- **Shortcut Priority [UI-02]**: Use `Alt` modifiers for system-level shortcuts (Update, Undo, New Mission) to prevent input leakage while the user is typing in text fields.
+- **Config Resilience [STB-01]**: When using Zod with merged data sources (Env + JSON), ensure schemas use `z.union` to handle both raw strings and already-transformed types, preventing "Double Transformation" crashes.
+- **Universal Model Discovery [API-01]**: Prefer standard OpenAI `models.list()` over provider-specific endpoints (like Ollama's `/api/tags`) to maintain compatibility across different local LLM backends (LM Studio, vLLM).
+- **MCP Sanitization [SEC-01]**: Use environment variable expansion (`${VAR}`) in JSON configuration files to keep sensitive API keys in `.env` while maintaining shareable configuration files.
 
 ### 6. Logic-Level Thrashing Detection
 - **Pattern:** Keep a rolling hash of the last N tool calls and trigger human intervention if the same failing action is repeated 3 times.

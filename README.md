@@ -15,8 +15,13 @@ Built with **Ink 5** and **React 18**, Vibes connects to a remote Ollama instanc
   - **Dashboard**: High-level progress and statistics.
   - **Mission View**: Tree structure of missions, milestones, and tasks.
   - **Task View**: Live agent output with grouped tool call visualization.
-  - **Status Bar**: Real-time monitoring of model stats, token usage, and active tasks.
-- **🛠️ Integrated Toolset**: Native support for file operations (`read`, `write`, `edit`, `glob`, `grep`), shell command execution, and directory listing.
+  - **Settings**: Real-time configuration and model switching.
+- **🛠️ Integrated Toolset**: Native support for file operations (`read`, `write`, `edit`, `glob`, `grep`), shell command execution, and workspace-wide symbol search.
+- **🔌 MCP & Plugin Support**: First-class support for the Model Context Protocol (MCP) with dynamic environment variable expansion in `.vibes/mcp.json`.
+- **🛡️ Safety & Reliability**: 
+  - **Auto-Git Snapshots**: Automatically commits workspace state before missions start.
+  - **Undo Mission (`Alt+Z`)**: Instantly reset the workspace if an agent botches a task.
+  - **Thrashing Detection**: Automatically pauses if the agent gets stuck in a tool-call loop.
 
 ---
 
@@ -43,7 +48,7 @@ To switch models, simply update `OLLAMA_MODEL` and `OLLAMA_BASE_URL` in your `.e
 
 1. **Clone the repository**:
    ```bash
-   git clone https://github.com/your-username/vibes.git
+   git clone https://github.com/SPhillips1337/vibes.git
    cd vibes
    ```
 
@@ -85,15 +90,16 @@ To switch models, simply update `OLLAMA_MODEL` and `OLLAMA_BASE_URL` in your `.e
 
 | Key | Action |
 |-----|--------|
-| `M` | Switch to **Missions** view |
-| `T` | Switch to **Tasks** view |
-| `A` | Switch to **Agent** output view |
-| `S` | Open **Settings** |
-| `N` | Create a **New Mission** |
-| `P` | **Pause/Resume** the scheduler |
-| `Q` / `Ctrl+C` | **Quit** the application |
+| `Alt+D` | Switch to **Dashboard** |
+| `Alt+M` | Switch to **Missions** view |
+| `Alt+T` | Switch to **Tasks** view |
+| `Alt+S` | Open **Settings** |
+| `Alt+N` | Create a **New Mission** |
+| `Alt+Z` | **Undo Mission** (Git hard-reset) |
+| `Alt+Y` | Toggle **YOLO Mode** |
+| `Alt+X` | **Dismiss** Update Notification |
+| `Ctrl+Q` | **Quit** the application |
 | `Tab` | Cycle focus between panels |
-| `↑/↓` | Navigate through lists |
 
 ---
 
