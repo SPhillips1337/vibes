@@ -34,7 +34,14 @@ const App = () => {
   useInput((input, key) => {
     if (key.ctrl && input === 'q') exit();
 
-    // Update notification keys (always available)
+    // Suppress global shortcuts while typing in a text field
+    const isTyping = isIdle; // In idle state, we have focusable text inputs
+    if (isTyping) {
+      if (key.tab) setFocusIndex(prev => (prev === 0 ? 1 : 0));
+      return; 
+    }
+
+    // Update notification keys (only if not typing)
     if (input === 'u' && updateInfo?.available && !updateDismissed && updateStatus === 'idle') {
       performUpdate();
       return;
@@ -44,18 +51,15 @@ const App = () => {
       return;
     }
 
-    // Suppress nav/toggle keys while modal views, setup form, or update process are active
+    // Suppress nav/toggle keys while modal views or update process are active
     if (pendingMission || pendingIntervention || updateStatus === 'updating') return;
 
-    if (key.meta && !isIdle) {
+    if (key.meta) {
       if (input === 'd') { setView('dashboard'); return; }
       if (input === 'm') { setView('mission'); return; }
       if (input === 't') { setView('task'); return; }
       if (input === 'y') { toggleYoloMode(); return; }
     }
-    
-    // Always allow Tab for form navigation
-    if (key.tab) setFocusIndex(prev => (prev === 0 ? 1 : 0));
   });
 
   const handleSubmit = (val: string) => {
@@ -217,6 +221,4 @@ const App = () => {
   );
 };
 
-console.clear();
-initLogger();
 render(<App />);

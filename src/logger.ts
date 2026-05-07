@@ -1,7 +1,6 @@
 import fs from 'fs';
-import path from 'path';
 
-const LOG_FILE = path.join(process.cwd(), 'debug.log');
+const LOG_FILE = '/tmp/vibes-debug.log';
 
 export function log(message: string, level: 'INFO' | 'WARN' | 'ERROR' | 'DEBUG' = 'INFO') {
   const timestamp = new Date().toISOString();
@@ -10,7 +9,6 @@ export function log(message: string, level: 'INFO' | 'WARN' | 'ERROR' | 'DEBUG' 
   try {
     fs.appendFileSync(LOG_FILE, logMessage);
   } catch (err) {
-    // Fallback if file writing fails
     console.error('Failed to write to log file:', err);
   }
 }

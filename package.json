@@ -8,7 +8,7 @@
   "scripts": {
     "build": "tsc",
     "start": "tsx src/index.tsx",
-    "dev": "tsx watch src/index.tsx"
+    "dev": "tsx watch --exclude .vibes --exclude dist --clear-screen=false src/index.tsx"
   },
   "dependencies": {
     "@inkjs/ui": "^2.0.0",
