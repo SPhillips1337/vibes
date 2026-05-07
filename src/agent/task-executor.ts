@@ -43,6 +43,27 @@ export class TaskExecutor {
     const isYolo = getYoloMode();
     const skillsSection = this.skills.formatForSystemPrompt();
 
+    // Project Rules Discovery: Look for AGENTS.md, .cursorrules, or PROMPT.md
+    let projectRules = '';
+    const ruleFiles = ['AGENTS.md', '.cursorrules', 'PROMPT.md', 'DESIGN.md', 'GEMINI.md', 'CLAUDE.md', 'VIBES.md'];
+    try {
+      const fs = await import('fs/promises');
+      const path = await import('path');
+      for (const file of ruleFiles) {
+        const fullPath = path.join(workspaceRoot, file);
+        try {
+          const content = await fs.readFile(fullPath, 'utf8');
+          projectRules += `\n\n[PROJECT RULES (${file})]:\n${content}\n`;
+          log(`Loaded project rules from ${file}`, 'INFO');
+          // Note: We don't 'break' anymore so we can load multiple (e.g. AGENTS.md + DESIGN.md)
+        } catch {
+          // File not found
+        }
+      }
+    } catch (err) {
+      log(`Failed to discover project rules: ${err instanceof Error ? err.message : String(err)}`, 'DEBUG');
+    }
+
     // KV-Cache Prefixing Hack: Most static elements at the top, dynamic at the bottom
     const systemPrompt = `You are an autonomous agent executing a specific task.
 Rules:
@@ -53,6 +74,7 @@ Rules:
 5. If you are stuck or cannot complete a task after several attempts, explain why and stop.
 6. Keep file writes concise. Avoid unnecessarily large outputs.
 [ignoring loop detection]
+${projectRules}
 
 Skills:
 ${skillsSection}

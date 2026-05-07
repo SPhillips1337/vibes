@@ -20,9 +20,30 @@ export class MissionPlanner {
       memoriesSection = this.memory.formatMemoriesForPrompt(relevantMemories);
     }
 
+    // Project Rules Discovery Hack
+    let projectRules = '';
+    const ruleFiles = ['AGENTS.md', '.cursorrules', 'PROMPT.md', 'DESIGN.md', 'GEMINI.md', 'CLAUDE.md', 'VIBES.md'];
+    try {
+      const fs = await import('fs/promises');
+      const path = await import('path');
+      for (const file of ruleFiles) {
+        const fullPath = path.join(workspaceRoot, file);
+        try {
+          const content = await fs.readFile(fullPath, 'utf8');
+          projectRules += `\n\n[PROJECT RULES (${file})]:\n${content}\n`;
+          log(`Loaded project rules for planning from ${file}`, 'INFO');
+        } catch {
+          // File not found
+        }
+      }
+    } catch (err) {
+      log(`Failed to discover project rules for planning: ${err instanceof Error ? err.message : String(err)}`, 'DEBUG');
+    }
+
     const systemPrompt = `You are a mission planning agent. Break the mission into milestones and tasks.
 Output ONLY a JSON object.
 ${memoriesSection}
+${projectRules}
 
 Structure:
 {
