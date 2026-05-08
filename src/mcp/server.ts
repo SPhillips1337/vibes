@@ -6,7 +6,6 @@ import { listDirTool, readFileTool, writeFileTool, globTool, fileOutlineTool, re
 import { shellTool } from '../tools/shell-tool.js';
 import { editFileTool } from '../tools/file-edit.js';
 import { log } from '../logger.js';
-import { config } from '../config.js';
 import { Mission } from '../agent/types.js';
 
 import { z } from 'zod';

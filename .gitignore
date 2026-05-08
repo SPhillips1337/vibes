@@ -40,3 +40,5 @@ PLAN.md
 *.pem
 *.key
 deploy/
+test3/app.js
+test3/styles.css
