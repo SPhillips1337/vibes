@@ -18,6 +18,7 @@
 - **Shortcut Priority [UI-02]**: Use `Alt` modifiers for system-level shortcuts (Update, Undo, New Mission) to prevent input leakage while the user is typing in text fields.
 - **Config Resilience [STB-01]**: When using Zod with merged data sources (Env + JSON), ensure schemas use `z.union` to handle both raw strings and already-transformed types, preventing "Double Transformation" crashes.
 - **Universal Model Discovery [API-01]**: Prefer standard OpenAI `models.list()` over provider-specific endpoints (like Ollama's `/api/tags`) to maintain compatibility across different local LLM backends (LM Studio, vLLM).
+- **Dynamic Endpoint Settings [API-02]**: Expose `OLLAMA_BASE_URL` and `OLLAMA_API_KEY` in the TUI settings to allow hot-swapping between local and remote LLM instances without restarts or manual `.env` edits.
 - **MCP Sanitization [SEC-01]**: Use environment variable expansion (`${VAR}`) in JSON configuration files to keep sensitive API keys in `.env` while maintaining shareable configuration files.
 
 ### 6. Logic-Level Thrashing Detection
@@ -41,3 +42,8 @@
 ### 3. Uncontrolled TUI Inputs
 - **Lesson:** Using `defaultValue` in Ink's `TextInput` can lead to focus resets or UI "flicker" if the parent re-renders frequently.
 - **Fix:** While version 2.0.0 of `@inkjs/ui` has limited controlled-prop support, isolating re-renders or using stable initialization prevents the "reset on every key" bug.
+
+### 4. The "Physical Toggle" Blocker
+- **Lesson:** Connection failures to "Remote LLMs" are often outside the codebase.
+- **Fact:** A remote server might respond to `ping` but refuse connections if the LLM backend (Ollama/LM Studio) was toggled off via a hardware or UI switch on the host machine.
+- **Fix:** Implement clearer "Connection Refused" diagnostics in the TUI to help the user distinguish between network failures and service availability issues.

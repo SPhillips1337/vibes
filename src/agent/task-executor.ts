@@ -121,7 +121,8 @@ ${memoriesSection}`;
         log(`Context usage: ~${stats.used}/${stats.usable} tokens (${stats.percentage}%) [step ${step + 1}/${currentMax}]`, 'DEBUG');
         onEvent?.({ type: 'context_update', used: stats.used, total: stats.usable, percentage: stats.percentage });
 
-        const taskModel = task.model || getModel();
+        const taskModel = task.use_reviewer_model && config.ENABLE_REVIEWER ? config.REVIEWER_MODEL : getModel();
+        log(`Using model: ${taskModel} ${task.use_reviewer_model ? '(Reviewer model requested)' : ''}`, 'DEBUG');
         const response = await getOllamaClient().chat.completions.create({
           model: taskModel,
           messages,

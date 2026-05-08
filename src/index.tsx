@@ -18,8 +18,9 @@ const App = () => {
   const {
     mission, pendingMission, isPlanning, isExecuting,
     error, events, contextUsage, pendingIntervention, activeMaxSteps,
-    isYoloMode, toggleYoloMode,
+    isYoloMode, toggleYoloMode, sessions,
     startMission, approveMission, rejectMission, resolveIntervention, resetMission, undoMission,
+    loadSession, deleteSession,
   } = useMission();
 
   const { exit } = useApp();
@@ -32,7 +33,7 @@ const App = () => {
   const { settings, availableModels, saveSettings } = useSettings();
 
   const [workspace, setWorkspace] = React.useState(process.env.VIBES_LAUNCH_DIR || process.cwd());
-  const [view, setView] = React.useState<'dashboard' | 'mission' | 'task' | 'settings'>('dashboard');
+  const [view, setView] = React.useState<'dashboard' | 'mission' | 'task' | 'settings' | 'history'>('dashboard');
   const [focusIndex, setFocusIndex] = React.useState(0);
 
   const isIdle = !mission && !isPlanning && !pendingMission;
@@ -51,10 +52,27 @@ const App = () => {
     }
 
     // Suppress other global shortcuts while typing in a text field
-    const isTyping = isIdle && view !== 'settings'; 
+    const isTyping = isIdle && view === 'dashboard'; 
     if (isTyping) {
       if (key.tab) setFocusIndex(prev => (prev === 0 ? 1 : 0));
       return; 
+    }
+
+    if (view === 'history') {
+      if (key.upArrow) setFocusIndex(prev => Math.max(2, prev - 1));
+      if (key.downArrow) setFocusIndex(prev => Math.min(sessions.length + 1, prev + 1));
+      if (key.return) {
+        const session = sessions[focusIndex - 2];
+        if (session) {
+          loadSession(session);
+          setView('mission');
+        }
+      }
+      if (key.delete || key.backspace) {
+        const session = sessions[focusIndex - 2];
+        if (session) deleteSession(session.mission.id);
+      }
+      return;
     }
 
     // Suppress nav/toggle keys while modal views or update process are active
@@ -65,6 +83,7 @@ const App = () => {
       if (input === 'm') { setView('mission'); return; }
       if (input === 't') { setView('task'); return; }
       if (input === 's') { setView(prev => prev === 'settings' ? 'dashboard' : 'settings'); return; }
+      if (input === 'h') { setView(prev => prev === 'history' ? 'dashboard' : 'history'); return; }
       if (input === 'y') { toggleYoloMode(); return; }
       if (input === 'n') {
         resetMission();
@@ -109,7 +128,10 @@ const App = () => {
             </>
           )}
           {isIdle && (
-            <Text color={view === 'settings' ? 'white' : 'blue'}>[Alt+S] Settings</Text>
+            <>
+              <Text color={view === 'history' ? 'white' : 'blue'}>[Alt+H] History</Text>
+              <Text color={view === 'settings' ? 'white' : 'blue'}>[Alt+S] Settings</Text>
+            </>
           )}
           <Text color="red">[Ctrl+Q] Quit</Text>
         </Box>
@@ -188,6 +210,37 @@ const App = () => {
 
         {!pendingMission && !pendingIntervention && view === 'task' && (
           <TaskView events={events} isExecuting={isExecuting} />
+        )}
+
+        {view === 'history' && (
+          <Box flexDirection="column" borderStyle="round" borderColor="magenta" padding={1}>
+            <Text bold color="magenta">Mission History</Text>
+            {sessions.length === 0 ? (
+              <Text color="gray">No past sessions found.</Text>
+            ) : (
+              <Box flexDirection="column" marginTop={1}>
+                {sessions.map((session, idx) => (
+                  <Box key={session.mission.id} justifyContent="space-between">
+                    <Box>
+                      <Text color={focusIndex === idx + 2 ? 'cyan' : 'white'}>
+                        {focusIndex === idx + 2 ? '▶ ' : '  '}
+                        {session.mission.title}
+                      </Text>
+                      <Text color="gray"> ({session.mission.status})</Text>
+                    </Box>
+                    <Text color="gray" dimColor>{new Date(session.updatedAt).toLocaleString()}</Text>
+                  </Box>
+                ))}
+                <Box marginTop={1}>
+                  <Text color="gray">Use </Text>
+                  <Text color="cyan" bold>Enter</Text>
+                  <Text color="gray"> to load, </Text>
+                  <Text color="red" bold>Del</Text>
+                  <Text color="gray"> to delete.</Text>
+                </Box>
+              </Box>
+            )}
+          </Box>
         )}
 
         {isIdle && view !== 'settings' && (

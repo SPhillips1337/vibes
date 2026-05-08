@@ -24,10 +24,12 @@ const BLOCKED_PATTERNS: RegExp[] = [
   /\bsftp\s/i,
   /\btelnet\s/i,
   /\bnc\s/i,        // netcat
+  /\bnmap\b/i,
   // Destructive filesystem ops
   /\brm\s+.*-[a-z]*r[a-z]*f/i,   // rm -rf variants
   /\bshred\b/i,
   /\bdd\s.*of=/i,
+  /\bmkfs\b/i,
   // Privilege escalation
   /\bsudo\b/i,
   /\bsu\s/i,
@@ -46,9 +48,18 @@ const BLOCKED_PATTERNS: RegExp[] = [
   // Docker / container management
   /\bdocker\s+(run|push|pull|exec|build)\b/i,
   /\bkubectl\b/i,
+  // Sensitive paths
+  /\/(etc|var|boot|root|proc|sys|dev)\b/i,
+  /\/\.ssh\b/i,
+  /\/\.env\b/i, // Prevent reading root .env if possible (though agent often needs project .env)
 ];
 
 function checkCommand(command: string): string | null {
+  // Path traversal check
+  if (command.includes('..')) {
+    return 'Path traversal detected (.. is not allowed in shell commands)';
+  }
+
   for (const pattern of BLOCKED_PATTERNS) {
     if (pattern.test(command)) {
       return `Command blocked by security policy (matched: ${pattern.source})`;

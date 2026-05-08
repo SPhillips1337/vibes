@@ -60,7 +60,7 @@ Structure:
           "description": "Actionable steps",
           "files": ["file/path"],
           "acceptance_criteria": ["criteria 1", "criteria 2"],
-          "model": "optional_model_name"
+          "use_reviewer_model": true
         }
       ]
     }
@@ -72,12 +72,10 @@ Constraints:
 2. MAX 5 tasks per milestone.
 3. Keep descriptions very short.
 4. Focus on the primary goal first.
-5. If a task is particularly complex (e.g. refactoring core logic, multi-file changes), suggest a more powerful model if available (e.g. ${config.REVIEWER_MODEL}).
-6. **STRICT MODEL NAMING**: If you specify a model name, you MUST use the EXACT string provided above. DO NOT shorten "google/gemma-4-e4b" to "gemma-4".
-7. No extra text or preamble.
-8. STOP when the acceptance criteria are met. Do not add extra polish, build pipelines, or deployment steps unless explicitly requested.
-
-STRICT BOUNDARIES — plans MUST NOT include tasks that:
+5. If a task is particularly complex (e.g. refactoring core logic, multi-file changes), set "use_reviewer_model" to true.
+6. No extra text or preamble.
+7. STOP when the acceptance criteria are met. Do not add extra polish, build pipelines, or deployment steps unless explicitly requested.
+8. **STRICT BOUNDARIES** — plans MUST NOT include tasks that:
 - Generate SSL/TLS certificates, SSH keys, API keys, secrets, or any credentials.
 - Run network tools: curl, wget, scp, rsync, ssh, sftp, nc.
 - Push to or clone from remote git repositories.
@@ -87,7 +85,7 @@ STRICT BOUNDARIES — plans MUST NOT include tasks that:
 - Write files outside the provided workspace directory.
 - Use openssl, ssh-keygen, gpg, or any cryptography tooling.
 
-A request for a "web app" means: HTML, CSS, and JavaScript files only. Not a build pipeline, not a service worker, not a deployment config — unless explicitly asked.`;
+9. A request for a "web app" means: HTML, CSS, and JavaScript files only. Not a build pipeline, not a service worker, not a deployment config — unless explicitly asked.`;
 
     const response = await getOllamaClient().chat.completions.create({
       model: getModel(),

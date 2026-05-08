@@ -9,6 +9,7 @@ import { editFileTool } from '../../tools/file-edit.js';
 import { log } from '../../logger.js';
 import { config } from '../../config.js';
 import { getMCPService } from '../../mcp/mcp-service.js';
+import { getSessionService, SessionData } from '../../agent/session-service.js';
 
 export const useMission = () => {
   const [mission, setMission] = useState<Mission | null>(null);
@@ -21,10 +22,17 @@ export const useMission = () => {
   const [pendingIntervention, setPendingIntervention] = useState<{ taskId: string; error: string; question: string } | null>(null);
   const [activeMaxSteps, setActiveMaxSteps] = useState(config.MAX_STEPS);
   const [isYoloMode, setIsYoloMode] = useState(false);
+  const [sessions, setSessions] = useState<SessionData[]>([]);
 
   // Hold a direct ref to the running scheduler so we can resolve interventions on it
   const schedulerRef = useRef<Scheduler | null>(null);
   const isYoloRef = useRef(false);
+  const sessionService = getSessionService();
+
+  // Load past sessions on mount
+  useState(() => {
+    sessionService.listSessions().then(setSessions);
+  });
 
   const toggleYoloMode = useCallback(() => {
     setIsYoloMode(prev => {
@@ -103,14 +111,23 @@ export const useMission = () => {
           setPendingIntervention({ taskId: event.taskId, error: event.error, question: event.question });
         }
         if (event.type === 'steps_updated') {
-          // Update the displayed max steps in the footer
           setActiveMaxSteps(config.MAX_STEPS + event.extraSteps);
         }
-        setEvents(prev => [...prev, event]);
-        // Keep mission state in sync with scheduler's internal state
-        if (schedulerRef.current) {
-          setMission({ ...schedulerRef.current['mission'] });
-        }
+        
+        setEvents(prev => {
+          const newEvents = [...prev, event];
+          
+          if (schedulerRef.current) {
+            const currentMission = { ...schedulerRef.current['mission'] };
+            setMission(currentMission);
+            // Auto-save on every event with latest events array
+            sessionService.saveSession(currentMission, newEvents).then(() => {
+              sessionService.listSessions().then(setSessions);
+            });
+          }
+          
+          return newEvents;
+        });
       };
 
       const scheduler = new Scheduler(plan, executor, onEvent, () => isYoloRef.current);
@@ -170,6 +187,22 @@ export const useMission = () => {
     setActiveMaxSteps(config.MAX_STEPS);
   }, []);
 
+  const loadSession = useCallback((session: SessionData) => {
+    setMission(session.mission);
+    setEvents(session.events);
+    setError(null);
+    setPendingMission(null);
+    setPendingIntervention(null);
+    setIsPlanning(false);
+    setIsExecuting(false);
+  }, []);
+
+  const deleteSession = useCallback(async (id: string) => {
+    await sessionService.deleteSession(id);
+    const updated = await sessionService.listSessions();
+    setSessions(updated);
+  }, []);
+
   const undoMission = useCallback(async () => {
     if (!mission) return;
     try {
@@ -193,6 +226,7 @@ export const useMission = () => {
     pendingIntervention,
     activeMaxSteps,
     isYoloMode,
+    sessions,
     startMission,
     approveMission,
     rejectMission,
@@ -200,5 +234,7 @@ export const useMission = () => {
     toggleYoloMode,
     resetMission,
     undoMission,
+    loadSession,
+    deleteSession,
   };
 };

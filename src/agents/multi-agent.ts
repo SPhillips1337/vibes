@@ -1,5 +1,5 @@
 import { ChatCompletionMessageParam } from 'openai/resources/chat/completions';
-import { ollama, MODEL } from '../ollama-client.js';
+import { getModel, getOllamaClient } from '../ollama-client.js';
 import { ToolDefinition, toOpenAITool } from '../tools/index.js';
 import { log, logObject } from '../logger.js';
 
@@ -56,8 +56,8 @@ export class BaseAgent {
     ];
 
     try {
-      const response = await ollama.chat.completions.create({
-        model: MODEL,
+      const response = await getOllamaClient().chat.completions.create({
+        model: getModel(),
         messages,
         tools: useTools && this.tools.length > 0 ? this.tools.map(toOpenAITool) : undefined,
         temperature: 0.7,

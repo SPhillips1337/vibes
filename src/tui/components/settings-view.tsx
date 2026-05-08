@@ -22,6 +22,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
   const fields = [
     { label: 'Ollama Model', key: 'OLLAMA_MODEL', type: 'select' },
+    { label: 'Base URL', key: 'OLLAMA_BASE_URL', type: 'text' },
+    { label: 'API Key', key: 'OLLAMA_API_KEY', type: 'text' },
     { label: 'Context Window', key: 'CONTEXT_WINDOW', type: 'number' },
     { label: 'Max Steps', key: 'MAX_STEPS', type: 'number' },
     { label: 'Max Concurrent Tasks', key: 'MAX_CONCURRENT_TASKS', type: 'number' },
@@ -92,6 +94,17 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               </Box>
             ) : field.type === 'number' ? (
               <Text color="gray">{tempSettings[field.key as keyof Config]}</Text>
+            ) : null}
+
+            {field.type === 'text' && focusIndex === index ? (
+              <Box borderStyle="single" borderColor="cyan" paddingX={1}>
+                <TextInput
+                  defaultValue={String(tempSettings[field.key as keyof Config])}
+                  onSubmit={(val) => handleSave(field.key as keyof Config, val)}
+                />
+              </Box>
+            ) : field.type === 'text' ? (
+              <Text color="gray">{field.key === 'OLLAMA_API_KEY' ? '********' : tempSettings[field.key as keyof Config]}</Text>
             ) : null}
 
             {field.type === 'boolean' && (

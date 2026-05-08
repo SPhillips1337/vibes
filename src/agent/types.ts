@@ -10,6 +10,7 @@ export const TaskSchema = z.object({
   files: z.array(z.string()).default([]),
   acceptance_criteria: z.array(z.string()).default([]),
   depends_on: z.array(z.string()).default([]),
+  use_reviewer_model: z.boolean().optional(),
   status: TaskStatusSchema.default('todo'),
   output: z.string().optional(),
   error: z.string().optional(),
@@ -17,8 +18,6 @@ export const TaskSchema = z.object({
   userGuidance: z.string().optional(),
   // Extra steps granted on retry (added to MAX_STEPS)
   extraSteps: z.number().optional(),
-  // Model override for this task (e.g. for high-difficulty tasks)
-  model: z.string().optional(),
 });
 
 export type Task = z.infer<typeof TaskSchema>;
