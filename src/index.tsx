@@ -31,7 +31,7 @@ const App = () => {
 
   const { settings, availableModels, saveSettings } = useSettings();
 
-  const [workspace, setWorkspace] = React.useState(process.cwd());
+  const [workspace, setWorkspace] = React.useState(process.env.VIBES_LAUNCH_DIR || process.cwd());
   const [view, setView] = React.useState<'dashboard' | 'mission' | 'task' | 'settings'>('dashboard');
   const [focusIndex, setFocusIndex] = React.useState(0);
 
