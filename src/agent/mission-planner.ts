@@ -1,5 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
 import { ollama, MODEL } from '../ollama-client.js';
+import { config } from '../config.js';
 import { Mission, MissionSchema } from './types.js';
 import { logObject, log } from '../logger.js';
 import { repairJson } from './json-repair.js';
@@ -71,8 +72,8 @@ Constraints:
 2. MAX 5 tasks per milestone.
 3. Keep descriptions very short.
 4. Focus on the primary goal first.
-5. If a task is particularly complex (e.g. refactoring core logic, multi-file changes), suggest a more powerful model if available (e.g. gemma2:27b or similar).
-5. No extra text or preamble.
+5. If a task is particularly complex (e.g. refactoring core logic, multi-file changes), suggest a more powerful model if available (e.g. ${config.REVIEWER_MODEL}).
+6. No extra text or preamble.
 6. STOP when the acceptance criteria are met. Do not add extra polish, build pipelines, or deployment steps unless explicitly requested.
 
 STRICT BOUNDARIES — plans MUST NOT include tasks that:
