@@ -39,6 +39,9 @@ export const readFileTool: ToolDefinition = {
       const content = await fs.readFile(fullPath, (encoding as BufferEncoding) || 'utf8');
       return { success: true, data: content };
     } catch (error: any) {
+      if (error.code === 'ENOENT') {
+        return { success: false, error: `File not found: ${filePath}. Hint: Use list_dir or glob to verify the file exists and check its exact name/path.` };
+      }
       return { success: false, error: error.message };
     }
   },
@@ -115,6 +118,9 @@ export const fileOutlineTool: ToolDefinition = {
 
       return { success: true, data: outline.length > 0 ? outline.join('\n') : 'No definitions found.' };
     } catch (error: any) {
+      if (error.code === 'ENOENT') {
+        return { success: false, error: `File not found: ${filePath}. Hint: Use list_dir or glob to verify the path.` };
+      }
       return { success: false, error: error.message };
     }
   },
@@ -148,6 +154,9 @@ export const readLinesTool: ToolDefinition = {
         }
       };
     } catch (error: any) {
+      if (error.code === 'ENOENT') {
+        return { success: false, error: `File not found: ${filePath}. Hint: Use list_dir or glob to verify the path.` };
+      }
       return { success: false, error: error.message };
     }
   },

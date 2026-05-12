@@ -116,6 +116,16 @@ ${memoriesSection}`;
         // Compress context if approaching the window limit
         messages = compressMessages(messages);
 
+        // Memento Checkpoint Injection
+        if (step > 0 && step % 8 === 0) {
+          log('Triggering Memento Checkpoint', 'INFO');
+          onEvent?.({ type: 'system_log', level: 'INFO', message: 'Triggering Memento Checkpoint to synthesize state...', timestamp: new Date().toISOString() });
+          messages.push({
+            role: 'user',
+            content: '[SYSTEM: MEMENTO CHECKPOINT] You have made several consecutive actions. To prevent context amnesia, please output a brief "Memento" (a 2-3 sentence summary of your current state, key findings, and immediate next step) in your text response before making any further tool calls.',
+          });
+        }
+
         // Log context usage
         const stats = getContextStats(messages);
         log(`Context usage: ~${stats.used}/${stats.usable} tokens (${stats.percentage}%) [step ${step + 1}/${currentMax}]`, 'DEBUG');
