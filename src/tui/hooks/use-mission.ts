@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { Mission, ExecutionEvent } from '../../agent/types.js';
 import { MissionPlanner } from '../../agent/mission-planner.js';
 import { TaskExecutor } from '../../agent/task-executor.js';
@@ -6,7 +6,7 @@ import { Scheduler, InterventionResolution } from '../../agent/scheduler.js';
 import { listDirTool, readFileTool, writeFileTool, globTool, fileOutlineTool, readLinesTool } from '../../tools/file-tools.js';
 import { shellTool } from '../../tools/shell-tool.js';
 import { editFileTool } from '../../tools/file-edit.js';
-import { log } from '../../logger.js';
+import { log, addLogListener, removeLogListener } from '../../logger.js';
 import { config } from '../../config.js';
 import { getMCPService } from '../../mcp/mcp-service.js';
 import { getSessionService, SessionData } from '../../agent/session-service.js';
@@ -33,6 +33,15 @@ export const useMission = () => {
   useState(() => {
     sessionService.listSessions().then(setSessions);
   });
+
+  // System Log Stream Integration
+  useEffect(() => {
+    const listener = (level: any, message: string, timestamp: string) => {
+      setEvents(prev => [...prev, { type: 'system_log', level, message, timestamp }]);
+    };
+    addLogListener(listener);
+    return () => removeLogListener(listener);
+  }, []);
 
   const toggleYoloMode = useCallback(() => {
     setIsYoloMode(prev => {

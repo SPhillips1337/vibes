@@ -10,6 +10,7 @@ import { TaskView } from './tui/components/task-view.js';
 import { SettingsView } from './tui/components/settings-view.js';
 import { ApprovalView } from './tui/components/approval-view.js';
 import { InterventionView } from './tui/components/intervention-view.js';
+import { LogStreamView } from './tui/components/log-stream-view.js';
 import { UpdateNotification } from './tui/components/update-notification.js';
 import { initLogger } from './logger.js';
 import path from 'path';
@@ -33,7 +34,7 @@ const App = () => {
   const { settings, availableModels, saveSettings } = useSettings();
 
   const [workspace, setWorkspace] = React.useState(process.env.VIBES_LAUNCH_DIR || process.cwd());
-  const [view, setView] = React.useState<'dashboard' | 'mission' | 'task' | 'settings' | 'history'>('dashboard');
+  const [view, setView] = React.useState<'dashboard' | 'mission' | 'task' | 'settings' | 'history' | 'log'>('dashboard');
   const [focusIndex, setFocusIndex] = React.useState(0);
 
   const isIdle = !mission && !isPlanning && !pendingMission;
@@ -84,6 +85,7 @@ const App = () => {
       if (input === 't') { setView('task'); return; }
       if (input === 's') { setView(prev => prev === 'settings' ? 'dashboard' : 'settings'); return; }
       if (input === 'h') { setView(prev => prev === 'history' ? 'dashboard' : 'history'); return; }
+      if (input === 'l') { setView(prev => prev === 'log' ? 'dashboard' : 'log'); return; }
       if (input === 'y') { toggleYoloMode(); return; }
       if (input === 'n') {
         resetMission();
@@ -122,6 +124,7 @@ const App = () => {
               <Text color={view === 'mission' ? 'white' : 'blue'}>[Alt+M] Mission</Text>
               <Text color={view === 'task' ? 'white' : 'blue'}>[Alt+T] Task</Text>
               <Text color={view === 'settings' ? 'white' : 'blue'}>[Alt+S] Settings</Text>
+              <Text color={view === 'log' ? 'white' : 'blue'}>[Alt+L] Logs</Text>
               <Text color="green">[Alt+N] New</Text>
               <Text color="red">[Alt+Z] Undo</Text>
               <Text color={isYoloMode ? 'yellow' : 'blue'} bold={isYoloMode}>[Alt+Y] YOLO</Text>
@@ -210,6 +213,10 @@ const App = () => {
 
         {!pendingMission && !pendingIntervention && view === 'task' && (
           <TaskView events={events} isExecuting={isExecuting} />
+        )}
+        
+        {!pendingMission && !pendingIntervention && view === 'log' && (
+          <LogStreamView events={events} />
         )}
 
         {view === 'history' && (

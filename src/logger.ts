@@ -2,12 +2,26 @@ import fs from 'fs';
 
 const LOG_FILE = '/tmp/vibes-debug.log';
 
-export function log(message: string, level: 'INFO' | 'WARN' | 'ERROR' | 'DEBUG' = 'INFO') {
+type LogLevel = 'INFO' | 'WARN' | 'ERROR' | 'DEBUG';
+type LogListener = (level: LogLevel, message: string, timestamp: string) => void;
+
+const listeners: Set<LogListener> = new Set();
+
+export function addLogListener(listener: LogListener) {
+  listeners.add(listener);
+}
+
+export function removeLogListener(listener: LogListener) {
+  listeners.delete(listener);
+}
+
+export function log(message: string, level: LogLevel = 'INFO') {
   const timestamp = new Date().toISOString();
   const logMessage = `[${timestamp}] [${level}] ${message}\n`;
   
   try {
     fs.appendFileSync(LOG_FILE, logMessage);
+    listeners.forEach(l => l(level, message, timestamp));
   } catch (err) {
     console.error('Failed to write to log file:', err);
   }
