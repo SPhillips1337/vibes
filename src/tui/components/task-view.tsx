@@ -72,6 +72,20 @@ export const TaskView: React.FC<TaskViewProps> = ({ events, isExecuting }) => {
                   <Text color="red">{event.message}</Text>
                 </Box>
               );
+            case 'system_log':
+              return (
+                <Box key={idx}>
+                  <Text color="gray" dimColor>[LOG] </Text>
+                  <Text color="white">{event.message}</Text>
+                </Box>
+              );
+            case 'timeout_warning':
+              return (
+                <Box key={idx}>
+                  <Text color="yellow" bold>[WARNING] </Text>
+                  <Text color="yellow">Model is taking longer than expected ({event.durationSeconds}s)...</Text>
+                </Box>
+              );
             case 'context_update':
               // Handled by Dashboard component
               return null;

@@ -123,12 +123,32 @@ ${memoriesSection}`;
 
         const taskModel = task.use_reviewer_model && config.ENABLE_REVIEWER ? config.REVIEWER_MODEL : getModel();
         log(`Using model: ${taskModel} ${task.use_reviewer_model ? '(Reviewer model requested)' : ''}`, 'DEBUG');
-        const response = await getOllamaClient().chat.completions.create({
-          model: taskModel,
-          messages,
-          tools: this.tools.map(toOpenAITool),
-          temperature: isYoloNow ? 0.9 : 0.7, // YOLO Mode Enhancement: more creative
-        });
+        let response: any;
+        let timeoutInterval: NodeJS.Timeout | null = null;
+        const TIMEOUT_THRESHOLD = 30; // seconds
+        let secondsElapsed = 0;
+
+        try {
+          timeoutInterval = setInterval(() => {
+            secondsElapsed += 5;
+            if (secondsElapsed >= TIMEOUT_THRESHOLD) {
+              onEvent?.({ 
+                type: 'timeout_warning', 
+                thresholdSeconds: TIMEOUT_THRESHOLD, 
+                durationSeconds: secondsElapsed 
+              });
+            }
+          }, 5000);
+
+          response = await getOllamaClient().chat.completions.create({
+            model: taskModel,
+            messages,
+            tools: this.tools.map(toOpenAITool),
+            temperature: isYoloNow ? 0.9 : 0.7, // YOLO Mode Enhancement: more creative
+          });
+        } finally {
+          if (timeoutInterval) clearInterval(timeoutInterval);
+        }
 
         let message = response.choices[0].message;
         logObject('Agent Step Response', message);

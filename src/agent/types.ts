@@ -57,6 +57,8 @@ export type ExecutionEvent =
   | { type: 'error'; message: string }
   | { type: 'context_update'; used: number; total: number; percentage: number }
   | { type: 'intervention_required'; taskId: string; error: string; question: string }
-  | { type: 'steps_updated'; taskId: string; extraSteps: number };
+  | { type: 'steps_updated'; taskId: string; extraSteps: number }
+  | { type: 'system_log'; level: 'INFO' | 'WARN' | 'ERROR' | 'DEBUG'; message: string; timestamp: string }
+  | { type: 'timeout_warning'; thresholdSeconds: number; durationSeconds: number };
 
 export type OnEvent = (event: ExecutionEvent) => void;
