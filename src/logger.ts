@@ -21,7 +21,13 @@ export function log(message: string, level: LogLevel = 'INFO') {
   
   try {
     fs.appendFileSync(LOG_FILE, logMessage);
-    listeners.forEach(l => l(level, message, timestamp));
+    listeners.forEach(l => {
+      try {
+        l(level, message, timestamp);
+      } catch (err) {
+        console.error('Log listener threw error:', err);
+      }
+    });
   } catch (err) {
     console.error('Failed to write to log file:', err);
   }

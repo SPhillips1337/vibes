@@ -113,8 +113,8 @@ export const shellTool: ToolDefinition = {
       if (stderr) detailedError += `\n\n[STDERR]:\n${stderr}`;
       if (stdout) detailedError += `\n\n[STDOUT]:\n${stdout}`;
 
-      // If we have output or failOnError is bypassed, it's a successful observation of a command result
-      if (!failOnError || stdout || stderr) {
+      // If failOnError is explicitly bypassed, we return the result as a success to the agent
+      if (!failOnError) {
         return {
           success: true,
           data: { 

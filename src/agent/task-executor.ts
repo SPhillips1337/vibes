@@ -138,15 +138,17 @@ ${memoriesSection}`;
         const TIMEOUT_THRESHOLD = 30; // seconds
         let secondsElapsed = 0;
 
+        let warningEmitted = false;
         try {
           timeoutInterval = setInterval(() => {
             secondsElapsed += 5;
-            if (secondsElapsed >= TIMEOUT_THRESHOLD) {
+            if (secondsElapsed >= TIMEOUT_THRESHOLD && !warningEmitted) {
               onEvent?.({ 
                 type: 'timeout_warning', 
                 thresholdSeconds: TIMEOUT_THRESHOLD, 
                 durationSeconds: secondsElapsed 
               });
+              warningEmitted = true;
             }
           }, 5000);
 

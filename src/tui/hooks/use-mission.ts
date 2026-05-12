@@ -30,9 +30,9 @@ export const useMission = () => {
   const sessionService = getSessionService();
 
   // Load past sessions on mount
-  useState(() => {
+  useEffect(() => {
     sessionService.listSessions().then(setSessions);
-  });
+  }, [sessionService]);
 
   // System Log Stream Integration
   useEffect(() => {
