@@ -39,7 +39,7 @@ export const TaskView: React.FC<TaskViewProps> = ({ events, isExecuting }) => {
               return (
                 <Box key={idx} paddingBottom={1}>
                   <Text color="blue" italic>Thinking: </Text>
-                  <Text color="gray" dimColor>{event.content.slice(0, 200)}{event.content.length > 200 ? '...' : ''}</Text>
+                  <Text color="gray" dimColor>{event.content.slice(0, 100)}{event.content.length > 100 ? '...' : ''}</Text>
                 </Box>
               );
             case 'tool_call':
@@ -70,13 +70,6 @@ export const TaskView: React.FC<TaskViewProps> = ({ events, isExecuting }) => {
                 <Box key={idx} paddingBottom={1}>
                   <Text color="red" bold>Error: </Text>
                   <Text color="red">{event.message}</Text>
-                </Box>
-              );
-            case 'system_log':
-              return (
-                <Box key={idx}>
-                  <Text color="gray" dimColor>[LOG] </Text>
-                  <Text color="white">{event.message}</Text>
                 </Box>
               );
             case 'timeout_warning':

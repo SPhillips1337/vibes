@@ -23,7 +23,7 @@ export class Scheduler {
   private interventionResolve: ((res: InterventionResolution) => void) | null = null;
   private getYoloMode: () => boolean;
 
-  constructor(mission: Mission, executor: TaskExecutor, onEvent?: OnEvent, getYoloMode: () => boolean = () => false) {
+  constructor(mission: Mission, executor: TaskExecutor, onEvent?: OnEvent, getYoloMode: () => boolean = () => true) {
     this.mission = mission;
     this.executor = executor;
     this.onEvent = onEvent;

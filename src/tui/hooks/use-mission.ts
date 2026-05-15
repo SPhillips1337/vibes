@@ -21,12 +21,12 @@ export const useMission = () => {
   const [contextUsage, setContextUsage] = useState<{ used: number; total: number; percentage: number } | null>(null);
   const [pendingIntervention, setPendingIntervention] = useState<{ taskId: string; error: string; question: string } | null>(null);
   const [activeMaxSteps, setActiveMaxSteps] = useState(config.MAX_STEPS);
-  const [isYoloMode, setIsYoloMode] = useState(false);
+  const [isYoloMode, setIsYoloMode] = useState(config.YOLO_MODE);
   const [sessions, setSessions] = useState<SessionData[]>([]);
 
   // Hold a direct ref to the running scheduler so we can resolve interventions on it
   const schedulerRef = useRef<Scheduler | null>(null);
-  const isYoloRef = useRef(false);
+  const isYoloRef = useRef(config.YOLO_MODE);
   const sessionService = getSessionService();
 
   // Load past sessions on mount

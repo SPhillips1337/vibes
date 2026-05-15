@@ -27,7 +27,7 @@ export class TaskExecutor {
     missionContext: string, 
     workspaceRoot: string, 
     onEvent?: OnEvent,
-    getYoloMode: () => boolean = () => false
+    getYoloMode: () => boolean = () => true
   ): Promise<Task> {
     log(`Executing task: ${task.title}`, 'INFO');
 

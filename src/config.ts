@@ -18,6 +18,7 @@ const ConfigSchema = z.object({
   MEMORY_ENABLED: z.union([z.boolean(), z.string().transform(v => v !== 'false')]).default(true),
   MEMORY_USER_ID: z.string().default('default'),
   MULTI_AGENT_ENABLED: z.union([z.boolean(), z.string().transform(v => v === 'true')]).default(false),
+  YOLO_MODE: z.union([z.boolean(), z.string().transform(v => v !== 'false')]).default(true),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;

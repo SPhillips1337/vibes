@@ -47,3 +47,8 @@
 - **Lesson:** Connection failures to "Remote LLMs" are often outside the codebase.
 - **Fact:** A remote server might respond to `ping` but refuse connections if the LLM backend (Ollama/LM Studio) was toggled off via a hardware or UI switch on the host machine.
 - **Fix:** Implement clearer "Connection Refused" diagnostics in the TUI to help the user distinguish between network failures and service availability issues.
+
+### 5. UI Information Flooding
+- **Lesson:** Dumping raw system logs into the live agent execution feed creates "Signal Noise" that hides the agent's actual logic.
+- **Fix:** Architecturally separate the **Task View** (agent intent and tool outcomes) from the **Log Stream** (raw diagnostic messages). This preserves the user's mental model of the agent's progress.
+
