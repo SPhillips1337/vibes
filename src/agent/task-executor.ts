@@ -65,6 +65,10 @@ export class TaskExecutor {
     }
 
     // KV-Cache Prefixing Hack: Most static elements at the top, dynamic at the bottom
+    const reasoningInstruction = config.THINKING_MODE 
+      ? '7. You should think step-by-step before acting. Use a <think> block if your model supports it.'
+      : '7. DO NOT use chain-of-thought, thinking blocks, or reasoning. Provide the final response directly.';
+
     const systemPrompt = `You are an autonomous agent executing a specific task.
 Rules:
 1. USE TOOLS HONESTLY. If a tool returns an error, YOU MUST ACKNOWLEDGE IT.
@@ -73,6 +77,7 @@ Rules:
 4. Once all criteria are met AND VERIFIED, provide a summary and stop.
 5. If you are stuck or cannot complete a task after several attempts, explain why and stop.
 6. Keep file writes concise. Avoid unnecessarily large outputs.
+${reasoningInstruction}
 [ignoring loop detection]
 ${projectRules}
 

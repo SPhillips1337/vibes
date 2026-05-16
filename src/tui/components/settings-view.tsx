@@ -26,6 +26,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     { label: 'API Key', key: 'OLLAMA_API_KEY', type: 'text' },
     { label: 'Context Window', key: 'CONTEXT_WINDOW', type: 'number' },
     { label: 'Max Steps', key: 'MAX_STEPS', type: 'number' },
+    { label: 'Reasoning Mode', key: 'THINKING_MODE', type: 'boolean' },
     { label: 'Default YOLO Mode', key: 'YOLO_MODE', type: 'boolean' },
     { label: 'Max Concurrent Tasks', key: 'MAX_CONCURRENT_TASKS', type: 'number' },
     { label: 'Enable Coder-Reviewer Swarm', key: 'ENABLE_REVIEWER', type: 'boolean' },
