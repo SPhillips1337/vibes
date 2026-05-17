@@ -1,88 +1,97 @@
+/**
+ * Memory service — unified facade for remote (mem0ai) and local (JSONL) backends.
+ * Switches based on config.LOCAL_MEMORY env var / config.yaml setting.
+ */
+
 import { MemoryClient } from 'mem0ai';
-import { log, logObject } from '../logger.js';
+import { log } from '../logger.js';
+import { config } from '../config.js';
+import { LocalMemoryService, getLocalMemoryService, type MemoryOptions } from './local-memory.js';
 
-export interface MemoryOptions {
-  userId?: string;
-  sessionId?: string;
-}
-
-export class MemoryService {
+export class UnifiedMemoryService {
   private client: MemoryClient | null = null;
   private userId: string;
   private enabled: boolean = false;
+  private useLocal: boolean;
+  private localService: LocalMemoryService | null = null;
 
-  constructor(userId: string = 'default') {
+  constructor(userId: string = 'default', opts?: MemoryOptions) {
     this.userId = userId;
-    this.initialize();
+    this.useLocal = Boolean(config.LOCAL_MEMORY);
+    if (this.useLocal) {
+      this.localService = getLocalMemoryService({ userId, ...opts });
+    } else {
+      this.initializeRemote();
+    }
   }
 
-  private async initialize() {
+  private async initializeRemote() {
     const apiKey = process.env.OPENAI_API_KEY || process.env.MEM0_API_KEY;
-    
     if (!apiKey) {
-      log('Memory service: No API key found, disabling memory', 'WARN');
+      log('Memory service: No API key found, remote memory disabled', 'WARN');
       return;
     }
-
     try {
       this.client = new MemoryClient({ apiKey });
       this.enabled = true;
-      log(`Memory service initialized for user: ${this.userId}`, 'INFO');
+      log(`Remote memory initialized for user: ${this.userId}`, 'INFO');
     } catch (error: any) {
-      log(`Failed to initialize memory service: ${error.message}`, 'ERROR');
+      log(`Failed to init remote memory: ${error.message}`, 'ERROR');
       this.enabled = false;
     }
   }
 
-  async addUserPreference(preference: string, category: string = 'general') {
+  // ── Unified API ────────────────────────────────────────────────────────────
+
+  async addUserPreference(preference: string, category: string = 'general'): Promise<void> {
+    if (this.useLocal) {
+      await this.localService?.addUserPreference(preference, category).catch(() => {});
+      return;
+    }
     if (!this.enabled || !this.client) return;
-    
     try {
       await this.client.add(
         [{ role: 'user', content: `[${category}] ${preference}` }],
-        { user_id: this.userId }
+        { user_id: this.userId },
       );
-      log(`Added user preference: ${preference}`, 'DEBUG');
-    } catch (error: any) {
-      log(`Failed to add preference: ${error.message}`, 'ERROR');
+    } catch (err: any) {
+      log(`Failed to add preference: ${err.message}`, 'ERROR');
     }
   }
 
-  async addContext(context: string, metadata?: Record<string, any>) {
+  async addContext(context: string, metadata?: Record<string, any>): Promise<void> {
+    if (this.useLocal) {
+      await this.localService?.addContext(context, metadata).catch(() => {});
+      return;
+    }
     if (!this.enabled || !this.client) return;
-    
     try {
       await this.client.add(
         [{ role: 'user', content: context }],
-        { user_id: this.userId, ...metadata }
+        { user_id: this.userId, ...metadata },
       );
-      log(`Added context: ${context.slice(0, 50)}...`, 'DEBUG');
-    } catch (error: any) {
-      log(`Failed to add context: ${error.message}`, 'ERROR');
+    } catch (err: any) {
+      log(`Failed to add context: ${err.message}`, 'ERROR');
     }
   }
 
-  async addToolUsage(toolName: string, args: Record<string, any>, result: any) {
-    if (!this.enabled || !this.client) return;
-    
+  async addToolUsage(toolName: string, args: Record<string, any>, result: any): Promise<void> {
+    if (this.useLocal) {
+      await this.localService?.addToolUsage(toolName, args, result).catch(() => {});
+      return;
+    }
     const content = `Used tool: ${toolName} with args: ${JSON.stringify(args)}. Result: ${JSON.stringify(result).slice(0, 200)}`;
     await this.addContext(content, { type: 'tool_usage', tool: toolName });
   }
 
   async retrieveRelevant(query: string, topK: number = 5): Promise<string[]> {
+    if (this.useLocal) return this.localService?.retrieveRelevant(query, topK) || [];
     if (!this.enabled || !this.client) return [];
-    
     try {
-      const results = await this.client.search(query, {
-        user_id: this.userId,
-        limit: topK,
-      });
-      
-      const memories = results.map((r: any) => r.content) || [];
-      log(`Retrieved ${memories.length} relevant memories`, 'DEBUG');
-      return memories;
-    } catch (error: any) {
-      log(`Failed to retrieve memories: ${error.message}`, 'ERROR');
+      const results = await this.client.search(query, { user_id: this.userId, limit: topK });
+      return results.map((r: any) => r.content) || [];
+    } catch (err: any) {
+      log(`Memory retrieve error: ${err.message}`, 'ERROR');
       return [];
     }
   }
@@ -97,31 +106,46 @@ export class MemoryService {
 
   formatMemoriesForPrompt(memories: string[]): string {
     if (memories.length === 0) return '';
-    
     const formatted = memories.map((m, i) => `${i + 1}. ${m}`).join('\n');
     return `\nRelevant memories from previous sessions:\n${formatted}\n`;
   }
 
-  async addConversationTurn(role: 'user' | 'assistant', content: string) {
+  async addConversationTurn(role: 'user' | 'assistant', content: string): Promise<void> {
     const prefix = role === 'user' ? 'User said:' : 'Assistant responded:';
     await this.addContext(`${prefix} ${content}`, { type: 'conversation', role });
   }
 
-  async addMissionSummary(missionTitle: string, tasksCompleted: string[]) {
-    const content = `Completed mission: ${missionTitle}. Tasks: ${tasksCompleted.join(', ')}`;
-    await this.addContext(content, { type: 'mission', title: missionTitle });
+  async addMissionSummary(missionTitle: string, tasksCompleted: string[]): Promise<void> {
+    await this.addContext(
+      `Completed mission: ${missionTitle}. Tasks: ${tasksCompleted.join(', ')}`,
+      { type: 'mission', title: missionTitle },
+    );
   }
 
   isEnabled(): boolean {
-    return this.enabled;
+    return this.useLocal ? (this.localService?.isEnabled() ?? false) : this.enabled;
+  }
+
+  /** Expose local flag for factory initialisation. */
+  get _useLocal(): boolean {
+    return this.useLocal;
+  }
+
+  /** Expose local service instance for factory initialisation. */
+  get _localService(): LocalMemoryService | null {
+    return this.localService;
   }
 }
 
-let globalMemoryService: MemoryService | null = null;
+let globalMemoryService: UnifiedMemoryService | null = null;
 
-export function getMemoryService(userId?: string): MemoryService {
+export function getMemoryService(userId?: string, opts?: MemoryOptions): UnifiedMemoryService {
   if (!globalMemoryService) {
-    globalMemoryService = new MemoryService(userId || 'default_user');
+    globalMemoryService = new UnifiedMemoryService(userId || 'default_user', opts);
+    // Init local backend if needed (remote is sync in constructor)
+    if (globalMemoryService._useLocal) {
+      globalMemoryService._localService?.initialize().catch(() => {});
+    }
   }
   return globalMemoryService;
 }

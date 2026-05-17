@@ -7,6 +7,7 @@ import { useSettings } from './tui/hooks/use-settings.js';
 import { Dashboard } from './tui/components/dashboard.js';
 import { MissionView } from './tui/components/mission-view.js';
 import { TaskView } from './tui/components/task-view.js';
+import { TraceView } from './tui/components/trace-view.js';
 import { SettingsView } from './tui/components/settings-view.js';
 import { ApprovalView } from './tui/components/approval-view.js';
 import { InterventionView } from './tui/components/intervention-view.js';
@@ -34,7 +35,7 @@ const App = () => {
   const { settings, availableModels, saveSettings } = useSettings();
 
   const [workspace, setWorkspace] = React.useState(process.env.VIBES_LAUNCH_DIR || process.cwd());
-  const [view, setView] = React.useState<'dashboard' | 'mission' | 'task' | 'settings' | 'history' | 'log'>('dashboard');
+  const [view, setView] = React.useState<'dashboard' | 'mission' | 'task' | 'trace' | 'settings' | 'history' | 'log'>('dashboard');
   const [focusIndex, setFocusIndex] = React.useState(0);
 
   const isIdle = !mission && !isPlanning && !pendingMission;
@@ -82,7 +83,8 @@ const App = () => {
     if (key.meta) {
       if (input === 'd') { setView('dashboard'); return; }
       if (input === 'm') { setView('mission'); return; }
-      if (input === 't') { setView('task'); return; }
+      if (input === 't') { setView('trace'); return; }
+      if (key.shift && input === 't') { setView('task'); return; }
       if (input === 's') { setView(prev => prev === 'settings' ? 'dashboard' : 'settings'); return; }
       if (input === 'h') { setView(prev => prev === 'history' ? 'dashboard' : 'history'); return; }
       if (input === 'l') { setView(prev => prev === 'log' ? 'dashboard' : 'log'); return; }
@@ -122,7 +124,8 @@ const App = () => {
             <>
               <Text color={view === 'dashboard' ? 'white' : 'blue'}>[Alt+D] Dash</Text>
               <Text color={view === 'mission' ? 'white' : 'blue'}>[Alt+M] Mission</Text>
-              <Text color={view === 'task' ? 'white' : 'blue'}>[Alt+T] Task</Text>
+              <Text color={view === 'trace' ? 'white' : 'blue'}>[Alt+T] Trace</Text>
+              <Text color={view === 'task' ? 'white' : 'blue'}>[Alt+⇧T] Task</Text>
               <Text color={view === 'settings' ? 'white' : 'blue'}>[Alt+S] Settings</Text>
               <Text color={view === 'log' ? 'white' : 'blue'}>[Alt+L] Logs</Text>
               <Text color="green">[Alt+N] New</Text>
@@ -217,6 +220,10 @@ const App = () => {
         
         {!pendingMission && !pendingIntervention && view === 'log' && (
           <LogStreamView events={events} />
+        )}
+
+        {!pendingMission && !pendingIntervention && view === 'trace' && (
+          <TraceView events={events} />
         )}
 
         {view === 'history' && (

@@ -19,6 +19,12 @@ const ConfigSchema = z.object({
   MEMORY_USER_ID: z.string().default('default'),
   MULTI_AGENT_ENABLED: z.union([z.boolean(), z.string().transform(v => v === 'true')]).default(false),
   YOLO_MODE: z.union([z.boolean(), z.string().transform(v => v !== 'false')]).default(true),
+  AGENT_HOOKS: z.union([z.boolean(), z.string().transform(v => v === 'true')]).default(true),
+  DATA_SHARING_MODE: z.enum(['none', 'workspace', 'full']).default('none'),
+  TOOL_EXECUTION_MODE: z.enum(['sequential', 'parallel']).default('sequential'),
+  CONTEXT_COMPACTION_ENABLED: z.union([z.boolean(), z.string().transform(v => v === 'true')]).default(true),
+  TRACE_DIR: z.string().optional(),
+  LOCAL_MEMORY: z.union([z.boolean(), z.string().transform(v => v === 'true')]).default(false),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;
