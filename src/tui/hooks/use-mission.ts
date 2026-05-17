@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { Mission, ExecutionEvent } from '../../agent/types.js';
 import { MissionPlanner } from '../../agent/mission-planner.js';
-import { TaskExecutor } from '../../agent/task-executor.js';
+import { TaskExecutor, createDefaultHooks } from '../../agent/task-executor.js';
 import { Scheduler, InterventionResolution } from '../../agent/scheduler.js';
 import { listDirTool, readFileTool, writeFileTool, globTool, fileOutlineTool, readLinesTool } from '../../tools/file-tools.js';
 import { shellTool } from '../../tools/shell-tool.js';
@@ -110,7 +110,9 @@ export const useMission = () => {
         ...mcpTools,
         ...pluginTools
       ];
-      const executor = new TaskExecutor(tools);
+      const executor = new TaskExecutor(tools, {
+        hooks: createDefaultHooks(() => isYoloRef.current),
+      });
 
       const onEvent = (event: ExecutionEvent) => {
         if (event.type === 'context_update') {
@@ -130,7 +132,7 @@ export const useMission = () => {
             const currentMission = { ...schedulerRef.current['mission'] };
             setMission(currentMission);
             // Auto-save on every event with latest events array
-            sessionService.saveSession(currentMission, newEvents).then(() => {
+            sessionService.saveSession(currentMission, newEvents, { readFiles: [], modifiedFiles: [] }).then(() => {
               sessionService.listSessions().then(setSessions);
             });
           }

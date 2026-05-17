@@ -1,11 +1,12 @@
 import fs from 'fs/promises';
 import path from 'path';
-import { Mission, ExecutionEvent } from './types.js';
+import { Mission, ExecutionEvent, CompactionDetails } from './types.js';
 import { log } from '../logger.js';
 
 export interface SessionData {
   mission: Mission;
   events: ExecutionEvent[];
+  compactionDetails: CompactionDetails;
   updatedAt: string;
 }
 
@@ -27,12 +28,13 @@ export class SessionService {
   /**
    * Saves a mission and its event history to disk.
    */
-  async saveSession(mission: Mission, events: ExecutionEvent[]) {
+  async saveSession(mission: Mission, events: ExecutionEvent[], compactionDetails?: CompactionDetails) {
     await this.ensureDir();
     const sessionPath = path.join(this.sessionsDir, `${mission.id}.json`);
     const data: SessionData = {
       mission,
       events,
+      compactionDetails: compactionDetails ?? { readFiles: [], modifiedFiles: [] },
       updatedAt: new Date().toISOString(),
     };
     
