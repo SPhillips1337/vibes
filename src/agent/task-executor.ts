@@ -35,15 +35,28 @@ export function createDefaultHooks(getYoloMode: () => boolean, emit?: (evt: Exec
       return undefined;
     },
 
-    // shouldStopAfterTurn: inline thrash detection (same logic as legacy path)
-    shouldStopAfterTurn: async ({ message, toolResults }) => {
-      const assistantMsg = message as any;
-      if (!assistantMsg?.tool_calls?.length) return false;
-      const callHistory: string[] = [];
-      const threshold = getYoloMode() ? 10 : 3;
-      for (const tc of assistantMsg.tool_calls) {
-        const callHash = `${tc.function.name}:${JSON.stringify(tc.function.arguments)}`;
-        callHistory.push(callHash);
+  // shouldStopAfterTurn: inline thrash detection (same logic as legacy path)
+  shouldStopAfterTurn: async ({ message, toolResults }) => {
+    const assistantMsg = message as any;
+    if (!assistantMsg?.tool_calls?.length) return false;
+    // Build callHistory from ALL previous accumulated messages in newMessages,
+    // not just the current turn — so thrash detection spans the whole session.
+    const callHistory: string[] = [];
+    if (Array.isArray((message as any).newMessages)) {
+      for (const msg of (message as any).newMessages) {
+        const tc = msg?.tool_calls as any[] | undefined;
+        if (Array.isArray(tc)) {
+          for (const t of tc) {
+            const callHash = `${t.function.name}:${JSON.stringify(t.function.arguments)}`;
+            if (callHash) callHistory.push(callHash);
+          }
+        }
+      }
+    }
+    const threshold = getYoloMode() ? 10 : 3;
+    for (const tc of assistantMsg.tool_calls) {
+      const callHash = `${tc.function.name}:${JSON.stringify(tc.function.arguments)}`;
+      callHistory.push(callHash);
         const repeats = callHistory.filter(h => h === callHash).length;
         if (repeats >= threshold) {
           return true;
@@ -136,7 +149,7 @@ export class TaskExecutor {
       if (!override) return result;
       return {
         ...result,
-        success: override.isError ?? result.success,
+        success: !override.isError ?? result.success,
         error: override.content ?? result.error,
         metadata: override.details ? { ...result.metadata, ...override.details } : result.metadata,
       };

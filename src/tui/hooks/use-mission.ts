@@ -111,6 +111,7 @@ export const useMission = () => {
         ...pluginTools
       ];
       const executor = new TaskExecutor(tools, {
+        getYoloMode: () => isYoloRef.current,
         hooks: createDefaultHooks(() => isYoloRef.current),
       });
 
