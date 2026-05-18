@@ -59,6 +59,8 @@ export type ExecutionEvent =
   | { type: 'context_update'; used: number; total: number; percentage: number }
   | { type: 'intervention_required'; taskId: string; error: string; question: string }
   | { type: 'steps_updated'; taskId: string; extraSteps: number }
+  | { type: 'task_started'; taskId: string; title: string }
+  | { type: 'task_completed'; taskId: string; title: string }
   | { type: 'system_log'; level: 'INFO' | 'WARN' | 'ERROR' | 'DEBUG'; message: string; timestamp: string }
   | { type: 'timeout_warning'; thresholdSeconds: number; durationSeconds: number };
 

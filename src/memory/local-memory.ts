@@ -8,7 +8,7 @@ import path from 'path';
 
 export interface MemoryOptions {
   userId?: string;
-  /** Optional override for the memory storage directory. Defaults to `.vibes/memories/`. */
+  /** Optional override for the memory storage directory. Defaults to `.antigravity/memories/`. */
   storageDir?: string;
 }
 
@@ -28,7 +28,7 @@ export class LocalMemoryService {
 
   constructor(userId: string = 'default', opts?: MemoryOptions) {
     this.userId = userId;
-    this.storageDir = opts?.storageDir ?? path.join(process.cwd(), '.vibes', 'memories');
+    this.storageDir = opts?.storageDir ?? path.join(process.cwd(), '.antigravity', 'memories');
   }
 
   async initialize(): Promise<void> {

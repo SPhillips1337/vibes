@@ -3,6 +3,7 @@ import { TaskExecutor } from './task-executor.js';
 import { config } from '../config.js';
 import { log } from '../logger.js';
 import { InterventionManager } from './intervention-manager.js';
+import { getMemoryService } from '../memory/index.js';
 
 export type InterventionResolution = {
   action: 'retry' | 'skip' | 'fail' | 'reply';
@@ -85,6 +86,12 @@ export class Scheduler {
 
     if (this.mission.status === 'executing' || this.mission.status === 'awaiting_intervention') {
       this.mission.status = this.failedTasks.size > 0 ? 'failed' : 'completed';
+      
+      // Memento Pattern: Persist mission summary into long-term memory
+      if (this.mission.status === 'completed') {
+        const completedTaskTitles = this.mission.milestones.flatMap(m => m.tasks).filter(t => t.status === 'done').map(t => t.title);
+        getMemoryService().addMissionSummary(this.mission.title, completedTaskTitles).catch(e => log(`Failed to save mission memory: ${e}`, 'DEBUG'));
+      }
     }
     return this.mission;
   }
@@ -112,6 +119,8 @@ export class Scheduler {
     task.status = 'in_progress';
     this.failedTasks.delete(task.id);
 
+    this.onEvent?.({ type: 'task_started', taskId: task.id, title: task.title });
+
     try {
       const missionContext = `Mission: ${this.mission.title}\nDescription: ${this.mission.description}`;
       const updatedTask = await this.executor.executeTask(task, missionContext, this.mission.workspace_root, this.onEvent, this.getYoloMode);
@@ -129,6 +138,7 @@ export class Scheduler {
           if (review.approved) {
             log(`Task approved by reviewer: ${updatedTask.title}`, 'INFO');
             this.completedTasks.add(task.id);
+            this.onEvent?.({ type: 'task_completed', taskId: task.id, title: task.title });
           } else {
             log(`Task REJECTED by reviewer: ${updatedTask.title}. Feedback: ${review.feedback}`, 'WARN');
             updatedTask.status = 'failed';
@@ -137,6 +147,7 @@ export class Scheduler {
           }
         } else {
           this.completedTasks.add(task.id);
+          this.onEvent?.({ type: 'task_completed', taskId: task.id, title: task.title });
         }
       } else {
         await this.handleTaskFailure(updatedTask);
@@ -185,6 +196,7 @@ export class Scheduler {
       task.status = 'done';
       task.output = '[Skipped by user]';
       this.completedTasks.add(task.id);
+      this.onEvent?.({ type: 'task_completed', taskId: task.id, title: task.title });
       this.updateTaskInMission(task);
       this.mission.status = 'executing';
       return;
@@ -197,6 +209,9 @@ export class Scheduler {
 
     if (resolution.action === 'reply' && resolution.message) {
       task.userGuidance = resolution.message;
+
+      // Memento Pattern: Save user guidance as long-term preference
+      getMemoryService().addUserPreference(`Guidance on task "${task.title}": ${resolution.message}`).catch(e => log(`Failed to save memory: ${e}`, 'DEBUG'));
 
       // Smart step parsing
       let bonusSteps = 10;
