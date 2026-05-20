@@ -8,6 +8,7 @@ import { getMemoryService } from '../memory/index.js';
 export type InterventionResolution = {
   action: 'retry' | 'skip' | 'fail' | 'reply';
   message?: string;
+  retryFromTaskId?: string;
 };
 
 export class Scheduler {
@@ -34,9 +35,16 @@ export class Scheduler {
 
   private rebuildTaskMap() {
     this.taskMap.clear();
+    this.completedTasks.clear();
+    this.failedTasks.clear();
     for (const milestone of this.mission.milestones) {
       for (const task of milestone.tasks) {
         this.taskMap.set(task.id, task);
+        if (task.status === 'done') {
+          this.completedTasks.add(task.id);
+        } else if (task.status === 'failed') {
+          this.failedTasks.add(task.id);
+        }
       }
     }
   }
@@ -166,6 +174,14 @@ export class Scheduler {
     this.mission.status = 'awaiting_intervention';
     log(`Task failed, requesting intervention for: ${task.title}`, 'WARN');
 
+    // Notify listeners about task failure
+    this.onEvent?.({
+      type: 'task_failed',
+      taskId: task.id,
+      title: task.title,
+      error: task.error || 'Unknown error',
+    });
+
     // Formulate the question (with timeout fallback)
     const question = await this.interventionManager.formulateInterventionQuestion(
       task, this.mission, task.error || 'Unknown error'
@@ -202,10 +218,24 @@ export class Scheduler {
       return;
     }
 
-    // retry or reply — reset task and apply extra steps/guidance directly
-    task.status = 'todo';
-    task.error = undefined;
-    this.failedTasks.delete(task.id);
+    // retry or reply — reset target task and all subsequent tasks to todo
+    let targetTaskId = resolution.retryFromTaskId || task.id;
+    let resetActive = false;
+    for (const milestone of this.mission.milestones) {
+      for (const t of milestone.tasks) {
+        if (t.id === targetTaskId) {
+          resetActive = true;
+        }
+        if (resetActive) {
+          t.status = 'todo';
+          t.error = undefined;
+          t.output = undefined;
+          this.completedTasks.delete(t.id);
+          this.failedTasks.delete(t.id);
+          this.taskMap.set(t.id, t);
+        }
+      }
+    }
 
     if (resolution.action === 'reply' && resolution.message) {
       task.userGuidance = resolution.message;

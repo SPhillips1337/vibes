@@ -18,6 +18,7 @@ addLogListener((level, message) => {
 const mcp = new FastMCP({ name: 'Vibes', version: '1.0.0' });
 
 let currentMission: Mission | null = null;
+let currentScheduler: Scheduler | null = null;
 
 mcp.addTool({
   name: 'execute_mission',
@@ -46,14 +47,19 @@ mcp.addTool({
           console.error(`[TASK_STATUS] {"name": ${JSON.stringify((event as any).title)}, "status": "in-progress"}`);
         } else if (event.type === 'task_completed') {
           console.error(`[TASK_STATUS] {"name": ${JSON.stringify((event as any).title)}, "status": "complete"}`);
+        } else if (event.type === 'task_failed') {
+          console.error(`[TASK_STATUS] {"name": ${JSON.stringify((event as any).title)}, "status": "failed"}`);
         }
       });
       
+      currentScheduler = scheduler;
       const result = await scheduler.run();
+      currentScheduler = null;
       currentMission = result;
       
       return `Mission ${result.status}. Completed ${result.milestones.flatMap(m => m.tasks).filter(t => t.status === 'done').length}/${result.milestones.flatMap(m => m.tasks).length} tasks.`;
     } catch (error: any) {
+      currentScheduler = null;
       return `Mission failed: ${error.message}`;
     }
   }
@@ -101,16 +107,36 @@ mcp.addTool({
           console.error(`[TASK_STATUS] {"name": ${JSON.stringify((event as any).title)}, "status": "in-progress"}`);
         } else if (event.type === 'task_completed') {
           console.error(`[TASK_STATUS] {"name": ${JSON.stringify((event as any).title)}, "status": "complete"}`);
+        } else if (event.type === 'task_failed') {
+          console.error(`[TASK_STATUS] {"name": ${JSON.stringify((event as any).title)}, "status": "failed"}`);
         }
       });
       
+      currentScheduler = scheduler;
       const result = await scheduler.run();
+      currentScheduler = null;
       currentMission = result;
       
       return `Mission ${result.status}. Completed ${result.milestones.flatMap(m => m.tasks).filter(t => t.status === 'done').length}/${result.milestones.flatMap(m => m.tasks).length} tasks.`;
     } catch (error: any) {
+      currentScheduler = null;
       return `Mission execution failed: ${error.message}`;
     }
+  }
+});
+
+mcp.addTool({
+  name: 'resolve_intervention',
+  description: 'Resolve a pending user intervention request.',
+  parameters: z.object({
+    action: z.enum(['retry', 'skip', 'fail', 'reply']),
+    message: z.string().optional(),
+    retryFromTaskId: z.string().optional(),
+  }),
+  execute: async ({ action, message, retryFromTaskId }) => {
+    if (!currentScheduler) return 'No active scheduler to resolve intervention for.';
+    currentScheduler.resolveIntervention({ action, message, retryFromTaskId } as any);
+    return 'Intervention resolved.';
   }
 });
 
