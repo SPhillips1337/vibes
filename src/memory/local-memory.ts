@@ -5,6 +5,7 @@
 
 import fs from 'fs/promises';
 import path from 'path';
+import { randomUUID } from 'crypto';
 
 export interface MemoryOptions {
   userId?: string;
@@ -73,7 +74,7 @@ export class LocalMemoryService {
   async addUserPreference(preference: string, category: string = 'general'): Promise<void> {
     await this.ensureReady();
     const entry: MemoryEntry = {
-      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      id: randomUUID(),
       content: `[${category}] ${preference}`,
       category: `preference.${category}`,
       metadata: { type: 'user_preference' },
@@ -85,7 +86,7 @@ export class LocalMemoryService {
   async addContext(context: string, metadata?: Record<string, any>): Promise<void> {
     await this.ensureReady();
     const entry: MemoryEntry = {
-      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      id: randomUUID(),
       content: context,
       category: 'context',
       metadata: { ...metadata, type: metadata?.type || 'context' },
