@@ -149,7 +149,7 @@ export class TaskExecutor {
       if (!override) return result;
       return {
         ...result,
-        success: !override.isError ?? result.success,
+        success: override.isError !== undefined ? !override.isError : result.success,
         error: override.content ?? result.error,
         metadata: override.details ? { ...result.metadata, ...override.details } : result.metadata,
       };
