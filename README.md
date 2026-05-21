@@ -58,6 +58,18 @@ This script will:
 - Add a `vibes` function to your shell configuration (`.bashrc`, `.zshrc`).
 - Enable **Automatic Workspace Detection** (Vibes will default to the directory you launched it from).
 
+### 🪟 Quick Install (Windows)
+
+```powershell
+irm https://raw.githubusercontent.com/SPhillips1337/Vibes/main/install.ps1 | iex
+```
+
+This script will:
+- Clone the repository to `$HOME\Vibes`.
+- Install dependencies and build the project.
+- Add a `vibes` function to your PowerShell `$PROFILE`.
+- Enable **Automatic Workspace Detection** (Vibes will default to the directory you launched it from).
+
 ---
 
 ### Manual Installation
