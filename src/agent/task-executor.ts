@@ -36,15 +36,17 @@ export function createDefaultHooks(getYoloMode: () => boolean, emit?: (evt: Exec
     },
 
   // shouldStopAfterTurn: inline thrash detection (same logic as legacy path)
-  shouldStopAfterTurn: async ({ message, toolResults }) => {
+  shouldStopAfterTurn: async ({ message, toolResults, newMessages }) => {
     const assistantMsg = message as any;
     if (!assistantMsg?.tool_calls?.length) return false;
     // Build callHistory from ALL previous accumulated messages in newMessages,
     // not just the current turn — so thrash detection spans the whole session.
     const callHistory: string[] = [];
-    if (Array.isArray((message as any).newMessages)) {
-      for (const msg of (message as any).newMessages) {
-        const tc = msg?.tool_calls as any[] | undefined;
+    if (Array.isArray(newMessages)) {
+      for (const msg of newMessages) {
+        // Exclude the current message to avoid double-counting it during repeats check
+        if ((msg as any) === (message as any)) continue;
+        const tc = (msg as any)?.tool_calls as any[] | undefined;
         if (Array.isArray(tc)) {
           for (const t of tc) {
             const callHash = `${t.function.name}:${JSON.stringify(t.function.arguments)}`;
@@ -57,13 +59,13 @@ export function createDefaultHooks(getYoloMode: () => boolean, emit?: (evt: Exec
     for (const tc of assistantMsg.tool_calls) {
       const callHash = `${tc.function.name}:${JSON.stringify(tc.function.arguments)}`;
       callHistory.push(callHash);
-        const repeats = callHistory.filter(h => h === callHash).length;
-        if (repeats >= threshold) {
-          return true;
-        }
+      const repeats = callHistory.filter(h => h === callHash).length;
+      if (repeats >= threshold) {
+        return true;
       }
-      return false;
-    },
+    }
+    return false;
+  },
 
     // transformContext: compact context via Pi-style HEAD + summary + TAIL
     transformContext: async ({ messages }) => {
@@ -86,13 +88,13 @@ export class TaskExecutor {
     options?: {
       /** Hook callbacks. When omitted, built-in invariant behaviours still run. */
       hooks?: AgentLoopHooks;
-      /** YOLO mode getter (injected at runtime). Defaults to () => false. */
+      /** YOLO mode getter (injected at runtime). Defaults to () => config.YOLO_MODE. */
       getYoloMode?: () => boolean;
     },
   ) {
     this.tools = tools;
-    this.hooks = options?.hooks ?? createDefaultHooks(options?.getYoloMode ?? (() => false));
-    this.getYoloMode = options?.getYoloMode ?? (() => false);
+    this.hooks = options?.hooks ?? createDefaultHooks(options?.getYoloMode ?? (() => config.YOLO_MODE));
+    this.getYoloMode = options?.getYoloMode ?? (() => config.YOLO_MODE);
   }
 
   private getYoloMode: () => boolean;
@@ -184,7 +186,7 @@ export class TaskExecutor {
     missionContext: string,
     workspaceRoot: string,
     onEvent?: OnEvent,
-    getYoloMode: () => boolean = () => false,
+    getYoloMode: () => boolean = () => config.YOLO_MODE,
   ): Promise<Task> {
     log(`Executing task: ${task.title}`, 'INFO');
 
@@ -431,84 +433,103 @@ ${memoriesSection}`;
               }
             } catch (err: any) {
               preResult = { success: false, error: err.message || 'Tool execution error' };
+              execError = err.message || 'Tool execution error';
             }
 
             // Build the deferred runner: executes all actual tool.execute() calls concurrently
-            preflight.push({
+            const entry = {
               toolCall,
               args,
               parsed,
               tool,
               validatedArgs,
-              execError: undefined,
+              execError,
               preResult,
               run: async (): Promise<ToolResult> => {
+                if (entry.execError) {
+                  return entry.preResult;
+                }
                 let result: ToolResult;
                 try {
-                  result = await tool!.execute(validatedArgs, { workspaceRoot });
+                  result = await tool!.execute(entry.validatedArgs, { workspaceRoot });
                 } catch (execErr: any) {
-                  execError = execErr.message;
+                  entry.execError = execErr.message;
                   result = { success: false, error: `Execution error: ${execErr.message}` };
                 }
                 try {
-                  const final = execError
+                  const final = entry.execError
                     ? result
-                    : await this.invokeAfterToolCall(tool, toolCall, validatedArgs, result, !result.success, message);
+                    : await this.invokeAfterToolCall(tool, toolCall, entry.validatedArgs, result, !result.success, message);
                   result = final;
                 } catch (hookErr: any) {
                   log(`afterToolCall hook error [${toolCall.function.name}]: ${hookErr.message}`, 'WARN');
                 }
                 return result;
               },
-            });
+            };
+            preflight.push(entry);
           }
 
           if (preflight.length === 0) {
             // nothing valid to execute; already logged above
-          } else if (config.TOOL_EXECUTION_MODE === ToolExecutionMode.PARALLEL) {
-            // ── PARALLEL EXECUTION pass ────────────────────────────────────────
-            // Hoist 'results' into the enclosing for-loop scope so the
-            // post-loop accommodation (see below) can reference it.
-            let results: ToolResult[] = [];
-            const started = Date.now();
-            const settled = await Promise.allSettled(preflight.map(e => e.run().catch(err => ({ success: false, error: err.message || 'Promise rejection' } as ToolResult))));
-            const elapsedMs = Date.now() - started;
-
-            // build result array (defined in outer scope) with preserved indices
-            results = preflight.map((entry, i) => {
-              const payload = (settled[i] as PromiseFulfilledResult<ToolResult>).value;
-              entry.execError = entry.execError || (!payload.success ? payload.error : undefined);
-              return entry.execError ? entry.preResult : payload;
-            });
-
-            // ── Post-parallel: emit events + truncate + append in fallback ────────
-            for (let i = 0; i < preflight.length; i++) {
-              const entry   = preflight[i];
-              const result  = results as ToolResult[];
-
-              onEvent?.({ type: 'tool_result', tool: entry.toolCall.function.name, result: result[i] });
-              logObject(`Tool Result [${entry.toolCall.function.name}] (parallel, ${elapsedMs} ms total)`, result[i]);
-              const resultStr = JSON.stringify(result[i]);
-              const truncatedResult = truncateToolResult(resultStr, entry.toolCall.function.name);
-              messages.push({
-                role: 'tool',
-                tool_call_id: entry.toolCall.id,
-                content: truncatedResult,
-              });
-            }
           } else {
-            // ── SEQUENTIAL pass ─────────────────────────────────────────────────
-            for (const entry of preflight) {
-              const result = await entry.run();
-              onEvent?.({ type: 'tool_result', tool: entry.toolCall.function.name, result });
-              logObject(`Tool Result [${entry.toolCall.function.name}]`, result);
-              const resultStr = JSON.stringify(result);
-              const truncatedResult = truncateToolResult(resultStr, entry.toolCall.function.name);
-              messages.push({
-                role: 'tool',
-                tool_call_id: entry.toolCall.id,
-                content: truncatedResult,
+            const turnResults: ToolResult[] = [];
+
+            if (config.TOOL_EXECUTION_MODE === ToolExecutionMode.PARALLEL) {
+              // ── PARALLEL EXECUTION pass ────────────────────────────────────────
+              // Hoist 'results' into the enclosing for-loop scope so the
+              // post-loop accommodation (see below) can reference it.
+              let results: ToolResult[] = [];
+              const started = Date.now();
+              const settled = await Promise.allSettled(preflight.map(e => e.run().catch(err => ({ success: false, error: err.message || 'Promise rejection' } as ToolResult))));
+              const elapsedMs = Date.now() - started;
+
+              // build result array (defined in outer scope) with preserved indices
+              results = preflight.map((entry, i) => {
+                const payload = (settled[i] as PromiseFulfilledResult<ToolResult>).value;
+                entry.execError = entry.execError || (!payload.success ? payload.error : undefined);
+                return entry.execError ? entry.preResult : payload;
               });
+              turnResults.push(...results);
+
+              // ── Post-parallel: emit events + truncate + append in fallback ────────
+              for (let i = 0; i < preflight.length; i++) {
+                const entry   = preflight[i];
+                const result  = results as ToolResult[];
+
+                onEvent?.({ type: 'tool_result', tool: entry.toolCall.function.name, result: result[i] });
+                logObject(`Tool Result [${entry.toolCall.function.name}] (parallel, ${elapsedMs} ms total)`, result[i]);
+                const resultStr = JSON.stringify(result[i]);
+                const truncatedResult = truncateToolResult(resultStr, entry.toolCall.function.name);
+                messages.push({
+                  role: 'tool',
+                  tool_call_id: entry.toolCall.id,
+                  content: truncatedResult,
+                });
+              }
+            } else {
+              // ── SEQUENTIAL pass ─────────────────────────────────────────────────
+              for (const entry of preflight) {
+                const result = await entry.run();
+                turnResults.push(result);
+                onEvent?.({ type: 'tool_result', tool: entry.toolCall.function.name, result });
+                logObject(`Tool Result [${entry.toolCall.function.name}]`, result);
+                const resultStr = JSON.stringify(result);
+                const truncatedResult = truncateToolResult(resultStr, entry.toolCall.function.name);
+                messages.push({
+                  role: 'tool',
+                  tool_call_id: entry.toolCall.id,
+                  content: truncatedResult,
+                });
+              }
+            }
+
+            // Invoke shouldStopAfterTurn hook
+            const stop = await this.invokeShouldStopAfterTurn(message, turnResults, messages);
+            if (stop) {
+              log('shouldStopAfterTurn hook stopped execution after tool results (thrash detection)', 'WARN');
+              currentTask = { ...currentTask, status: 'failed', error: 'Agent loop stopped by thrash detection (potential infinite loop)' };
+              return currentTask;
             }
           }
         } else if (message.content) {

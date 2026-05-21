@@ -125,7 +125,7 @@ export interface ShouldStopAfterTurnContext {
   /** Full agent context after turn. */
   context: Record<string, unknown>;
   /** Messages this loop will return if it exits now. */
-  newMessages: ExecutionEvent[];
+  newMessages: ChatCompletionMessageParam[];
 }
 
 /** Context passed to `transformContext` — receives and returns the message array. */
