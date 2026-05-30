@@ -124,6 +124,31 @@ function Update-EnvVar {
     }
 }
 
+function Prompt-Bool {
+    param([string]$promptText, [string]$defaultVal)
+    $defaultYn = 'y'
+    if ($defaultVal -eq 'false' -or $defaultVal -eq 'disabled') {
+        $defaultYn = 'n'
+    }
+
+    $inputYn = Read-Host "❓ ${promptText} (y/n) [$defaultYn]"
+    if ([string]::IsNullOrWhiteSpace($inputYn)) { $inputYn = $defaultYn }
+
+    if ($inputYn -match '^[Yy]$') {
+        if ($defaultVal -eq 'enabled' -or $defaultVal -eq 'disabled') {
+            return 'enabled'
+        } else {
+            return 'true'
+        }
+    } else {
+        if ($defaultVal -eq 'enabled' -or $defaultVal -eq 'disabled') {
+            return 'disabled'
+        } else {
+            return 'false'
+        }
+    }
+}
+
 function Configure-Env {
     if (-not [Environment]::UserInteractive) {
         Write-Host '⚠️  Skipping interactive configuration (non-interactive mode)' -ForegroundColor Yellow
@@ -156,6 +181,40 @@ function Configure-Env {
     Update-EnvVar 'OLLAMA_BASE_URL' $inputUrl
     Update-EnvVar 'OLLAMA_MODEL' $inputModel
     Update-EnvVar 'OLLAMA_API_KEY' $inputKey
+
+    Write-Host '⚙️  Agent Behavior & Execution Configuration' -ForegroundColor Cyan
+
+    $defaultContext = Get-ExistingVal 'CONTEXT_WINDOW'
+    if ([string]::IsNullOrWhiteSpace($defaultContext)) { $defaultContext = '64000' }
+    $inputContext = Read-Host "Enter Context Window Size (tokens) [$defaultContext]"
+    if ([string]::IsNullOrWhiteSpace($inputContext)) { $inputContext = $defaultContext }
+    Update-EnvVar 'CONTEXT_WINDOW' $inputContext
+
+    $defaultSteps = Get-ExistingVal 'MAX_STEPS'
+    if ([string]::IsNullOrWhiteSpace($defaultSteps)) { $defaultSteps = '50' }
+    $inputSteps = Read-Host "Enter Max Steps per task [$defaultSteps]"
+    if ([string]::IsNullOrWhiteSpace($inputSteps)) { $inputSteps = $defaultSteps }
+    Update-EnvVar 'MAX_STEPS' $inputSteps
+
+    $defaultThinking = Get-ExistingVal 'THINKING_MODE'
+    if ([string]::IsNullOrWhiteSpace($defaultThinking)) { $defaultThinking = 'enabled' }
+    $inputThinking = Prompt-Bool 'Enable Thinking Mode?' $defaultThinking
+    Update-EnvVar 'THINKING_MODE' $inputThinking
+
+    $defaultReviewer = Get-ExistingVal 'ENABLE_REVIEWER'
+    if ([string]::IsNullOrWhiteSpace($defaultReviewer)) { $defaultReviewer = 'true' }
+    $inputReviewer = Prompt-Bool 'Enable Reviewer Swarm?' $defaultReviewer
+    Update-EnvVar 'ENABLE_REVIEWER' $inputReviewer
+
+    $defaultMemory = Get-ExistingVal 'MEMORY_ENABLED'
+    if ([string]::IsNullOrWhiteSpace($defaultMemory)) { $defaultMemory = 'true' }
+    $inputMemory = Prompt-Bool 'Enable Long-Term Memory?' $defaultMemory
+    Update-EnvVar 'MEMORY_ENABLED' $inputMemory
+
+    $defaultMultiagent = Get-ExistingVal 'MULTI_AGENT_ENABLED'
+    if ([string]::IsNullOrWhiteSpace($defaultMultiagent)) { $defaultMultiagent = 'false' }
+    $inputMultiagent = Prompt-Bool 'Enable Multi-Agent Mode?' $defaultMultiagent
+    Update-EnvVar 'MULTI_AGENT_ENABLED' $inputMultiagent
     
     Write-Host "✅ Configuration updated in $EnvFile" -ForegroundColor Green
 }
