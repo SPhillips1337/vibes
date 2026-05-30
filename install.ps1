@@ -7,7 +7,7 @@
     can launch it from anywhere by typing 'vibes'.
 #>
 
-$ErrorActionPreference = 'Continue'
+$ErrorActionPreference = 'Stop'
 
 $RepoUrl = 'https://github.com/SPhillips1337/Vibes.git'
 $InstallDir = "$HOME\Vibes"
@@ -36,7 +36,7 @@ if (Test-Path -LiteralPath $InstallDir) {
     Push-Location -LiteralPath $InstallDir
     try {
         if (Test-Path -LiteralPath ".git") {
-            $null = git pull
+            $null = git pull 2>&1
             if ($LASTEXITCODE -ne 0) {
                 Write-Host 'Warning: Could not pull latest changes. Continuing...' -ForegroundColor Yellow
             }
@@ -72,102 +72,6 @@ try {
     }
 } finally {
     Pop-Location
-}
-
-# 5.5 Setup LLM Configuration
-$EnvFile = Join-Path $InstallDir ".env"
-$EnvExample = Join-Path $InstallDir ".env.example"
-
-function Get-ExistingVal {
-    param([string]$varName)
-    if (Test-Path -LiteralPath $EnvFile) {
-        $line = Get-Content -LiteralPath $EnvFile | Where-Object { $_ -match "^${varName}=" }
-        if ($line) {
-            return ($line -split '=', 2)[1]
-        }
-    }
-    if (Test-Path -LiteralPath $EnvExample) {
-        $line = Get-Content -LiteralPath $EnvExample | Where-Object { $_ -match "^${varName}=" }
-        if ($line) {
-            return ($line -split '=', 2)[1]
-        }
-    }
-    return ""
-}
-
-function Update-EnvVar {
-    param([string]$varName, [string]$value)
-    if (Test-Path -LiteralPath $EnvFile) {
-        $content = Get-Content -LiteralPath $EnvFile
-        $found = $false
-        for ($i = 0; $i -lt $content.Length; $i++) {
-            if ($content[$i] -match "^${varName}=") {
-                $content[$i] = "${varName}=${value}"
-                $found = $true
-                break
-            }
-        }
-        if (-not $found) {
-            $content += "${varName}=${value}"
-        }
-        Set-Content -LiteralPath $EnvFile -Value $content
-    } else {
-        Add-Content -LiteralPath $EnvFile -Value "${varName}=${value}"
-    }
-}
-
-function Configure-Env {
-    if (-not [Environment]::UserInteractive) {
-        Write-Host '⚠️  Skipping interactive configuration (non-interactive mode)' -ForegroundColor Yellow
-        return
-    }
-
-    if (-not (Test-Path -LiteralPath $EnvFile)) {
-        if (Test-Path -LiteralPath $EnvExample) {
-            Copy-Item -LiteralPath $EnvExample -Destination $EnvFile
-        } else {
-            New-Item -ItemType File -Path $EnvFile -Force | Out-Null
-        }
-    }
-
-    Write-Host '⚙️  LLM Provider Configuration' -ForegroundColor Cyan
-    
-    $defaultUrl = Get-ExistingVal 'OLLAMA_BASE_URL'
-    $defaultModel = Get-ExistingVal 'OLLAMA_MODEL'
-    $defaultKey = Get-ExistingVal 'OLLAMA_API_KEY'
-
-    $inputUrl = Read-Host "Enter Ollama Base URL [$defaultUrl]"
-    if ([string]::IsNullOrWhiteSpace($inputUrl)) { $inputUrl = $defaultUrl }
-
-    $inputModel = Read-Host "Enter Ollama Model [$defaultModel]"
-    if ([string]::IsNullOrWhiteSpace($inputModel)) { $inputModel = $defaultModel }
-
-    $inputKey = Read-Host "Enter Ollama API Key [$defaultKey]"
-    if ([string]::IsNullOrWhiteSpace($inputKey)) { $inputKey = $defaultKey }
-
-    Update-EnvVar 'OLLAMA_BASE_URL' $inputUrl
-    Update-EnvVar 'OLLAMA_MODEL' $inputModel
-    Update-EnvVar 'OLLAMA_API_KEY' $inputKey
-    
-    Write-Host "✅ Configuration updated in $EnvFile" -ForegroundColor Green
-}
-
-if ([Environment]::UserInteractive) {
-    Write-Host ''
-    $configureNow = Read-Host '❓ Would you like to configure your LLM settings now? (y/n) [y]'
-    if ([string]::IsNullOrWhiteSpace($configureNow)) { $configureNow = 'y' }
-    if ($configureNow -match '^[Yy]$') {
-        Configure-Env
-    } else {
-        if (-not (Test-Path -LiteralPath $EnvFile) -and (Test-Path -LiteralPath $EnvExample)) {
-            Copy-Item -LiteralPath $EnvExample -Destination $EnvFile
-            Write-Host '📝 Created default .env from .env.example. You can modify it later.' -ForegroundColor Yellow
-        }
-    }
-} else {
-    if (-not (Test-Path -LiteralPath $EnvFile) -and (Test-Path -LiteralPath $EnvExample)) {
-        Copy-Item -LiteralPath $EnvExample -Destination $EnvFile
-    }
 }
 
 # 6. Setup PowerShell Command
