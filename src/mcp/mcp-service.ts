@@ -46,10 +46,12 @@ export class MCPClient extends EventEmitter {
   private sseUrl: string | null = null;
   private postUrl: string | null = null;
   private abortController: AbortController | null = null;
+  private fatalError: Error | null = null;
 
   constructor(config: MCPServerConfig) {
     super();
     this.serverName = config.name;
+    this.on('error', () => {}); // Prevent crash from unhandled 'error' events
     if (config.url) {
       this.transport = 'sse';
       this.sseUrl = config.url;
@@ -78,12 +80,16 @@ export class MCPClient extends EventEmitter {
 
     this.process?.on('error', (error) => {
       log(`MCP server ${config.name} error: ${error.message}`, 'ERROR');
-      this.emit('error', error);
+      this.fatalError = error;
+      this.process = null;
     });
 
     this.process?.on('exit', (code) => {
       log(`MCP server ${config.name} exited with code ${code}`, 'INFO');
-      this.emit('exit', code);
+      if (code !== 0 && !this.fatalError) {
+        this.fatalError = new Error(`Process exited with code ${code}`);
+      }
+      this.process = null;
     });
   }
 
@@ -143,7 +149,7 @@ export class MCPClient extends EventEmitter {
     } catch (error: any) {
       if (error.name !== 'AbortError') {
         log(`SSE error for ${this.serverName}: ${error.message}`, 'ERROR');
-        this.emit('error', error);
+        this.fatalError = error;
       }
     }
   }
@@ -237,6 +243,17 @@ export class MCPClient extends EventEmitter {
   async initialize(): Promise<void> {
     if (this.initialized) return;
 
+    // Short wait for spawn error to surface (e.g. ENOENT)
+    await new Promise(r => setTimeout(r, 100));
+
+    if (this.fatalError) {
+      throw this.fatalError;
+    }
+
+    if (!this.process && this.transport === 'stdio') {
+      throw new Error(`MCP process failed to start`);
+    }
+
     try {
       // For SSE, wait until we have the POST endpoint
       if (this.transport === 'sse' && !this.postUrl) {
@@ -312,7 +329,7 @@ export class MCPClient extends EventEmitter {
   }
 
   isConnected(): boolean {
-    return this.process?.connected || false;
+    return !this.fatalError && (this.process?.connected || false);
   }
 
   async shutdown(): Promise<void> {

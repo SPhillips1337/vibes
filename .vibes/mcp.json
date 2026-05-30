@@ -1,19 +1,5 @@
 {
   "mcpServers": {
-    "dynamic-proxy": {
-      "command": "/home/stephen/.local/bin/uv",
-      "args": [
-        "run",
-        "--quiet",
-        "--project",
-        "/home/stephen/dynamic-mcp-proxy-server",
-        "python", "-m", "src.proxy_server"
-      ],
-      "env": {
-        "PATH": "/home/stephen/.local/bin:/usr/local/bin:/usr/bin:/bin",
-        "PYTHONPATH": "/home/stephen/dynamic-mcp-proxy-server/src"
-      }
-    },
     "github": {
       "command": "npx",
       "args": ["-y", "@modelcontextprotocol/server-github"],
