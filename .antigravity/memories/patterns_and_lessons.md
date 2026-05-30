@@ -20,6 +20,7 @@
 - **Universal Model Discovery [API-01]**: Prefer standard OpenAI `models.list()` over provider-specific endpoints (like Ollama's `/api/tags`) to maintain compatibility across different local LLM backends (LM Studio, vLLM).
 - **Dynamic Endpoint Settings [API-02]**: Expose `OLLAMA_BASE_URL` and `OLLAMA_API_KEY` in the TUI settings to allow hot-swapping between local and remote LLM instances without restarts or manual `.env` edits.
 - **MCP Sanitization [SEC-01]**: Use environment variable expansion (`${VAR}`) in JSON configuration files to keep sensitive API keys in `.env` while maintaining shareable configuration files.
+- **Interactive Configuration on Setup [ENV-01]**: Offer interactive `.env` configuration prompts in `install.sh`. Guard the input prompts with `[ -t 0 ]` to support both manual interactive installs and non-interactive scripted piping (e.g. `curl | bash`).
 
 ### 6. Logic-Level Thrashing Detection
 - **Pattern:** Keep a rolling hash of the last N tool calls and trigger human intervention if the same failing action is repeated 3 times.
