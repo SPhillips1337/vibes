@@ -33,7 +33,11 @@ Write-Host "Git found: $($git.Source)" -ForegroundColor Green
 # 3. Clone or Update Repo
 if (Test-Path -LiteralPath $InstallDir) {
     Write-Host "Project directory already exists at $InstallDir. Updating..." -ForegroundColor Yellow
-    Push-Location -LiteralPath $InstallDir
+    Push-Location -LiteralPath $InstallDir -ErrorAction SilentlyContinue
+    if (-not $?) {
+        Write-Host "ERROR: Failed to enter directory $InstallDir" -ForegroundColor Red
+        exit 1
+    }
     try {
         if (Test-Path -LiteralPath ".git") {
             $null = git pull
@@ -47,15 +51,19 @@ if (Test-Path -LiteralPath $InstallDir) {
 } else {
     Write-Host "Cloning Vibes to $InstallDir ..." -ForegroundColor Green
     git clone $RepoUrl $InstallDir
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host 'ERROR: Failed to clone repository.' -ForegroundColor Red
+    if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $InstallDir)) {
+        Write-Host 'ERROR: Failed to clone repository or directory was not created.' -ForegroundColor Red
         exit 1
     }
 }
 
 # 4. Install Dependencies
 Write-Host 'Installing dependencies...' -ForegroundColor Green
-Push-Location -LiteralPath $InstallDir
+Push-Location -LiteralPath $InstallDir -ErrorAction SilentlyContinue
+if (-not $?) {
+    Write-Host "ERROR: Failed to enter directory $InstallDir to install dependencies." -ForegroundColor Red
+    exit 1
+}
 try {
     npm install
     if ($LASTEXITCODE -ne 0) {
