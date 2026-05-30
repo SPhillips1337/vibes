@@ -122,21 +122,9 @@ const App = () => {
         <Box gap={2}>
           {!pendingMission && !pendingIntervention && !isIdle && (
             <>
-              <Text color={view === 'dashboard' ? 'white' : 'blue'}>[Alt+D] Dash</Text>
-              <Text color={view === 'mission' ? 'white' : 'blue'}>[Alt+M] Mission</Text>
-              <Text color={view === 'trace' ? 'white' : 'blue'}>[Alt+T] Trace</Text>
-              <Text color={view === 'task' ? 'white' : 'blue'}>[Alt+⇧T] Task</Text>
-              <Text color={view === 'settings' ? 'white' : 'blue'}>[Alt+S] Settings</Text>
-              <Text color={view === 'log' ? 'white' : 'blue'}>[Alt+L] Logs</Text>
               <Text color="green">[Alt+N] New</Text>
               <Text color="red">[Alt+Z] Undo</Text>
               <Text color={isYoloMode ? 'yellow' : 'blue'} bold={isYoloMode}>[Alt+Y] YOLO</Text>
-            </>
-          )}
-          {isIdle && (
-            <>
-              <Text color={view === 'history' ? 'white' : 'blue'}>[Alt+H] History</Text>
-              <Text color={view === 'settings' ? 'white' : 'blue'}>[Alt+S] Settings</Text>
             </>
           )}
           <Text color="red">[Ctrl+Q] Quit</Text>
@@ -304,6 +292,27 @@ const App = () => {
           </Box>
         )}
       </Box>
+
+      {/* Navigation */}
+      {!pendingMission && !pendingIntervention && (
+        <Box borderStyle="single" borderColor="blue" paddingX={1} justifyContent="center" gap={2} marginTop={1}>
+          {!isIdle ? (
+            <>
+              <Text color={view === 'dashboard' ? 'white' : 'blue'}>[Alt+D] Dash</Text>
+              <Text color={view === 'mission' ? 'white' : 'blue'}>[Alt+M] Mission</Text>
+              <Text color={view === 'trace' ? 'white' : 'blue'}>[Alt+T] Trace</Text>
+              <Text color={view === 'task' ? 'white' : 'blue'}>[Alt+⇧T] Task</Text>
+              <Text color={view === 'settings' ? 'white' : 'blue'}>[Alt+S] Settings</Text>
+              <Text color={view === 'log' ? 'white' : 'blue'}>[Alt+L] Logs</Text>
+            </>
+          ) : (
+            <>
+              <Text color={view === 'history' ? 'white' : 'blue'}>[Alt+H] History</Text>
+              <Text color={view === 'settings' ? 'white' : 'blue'}>[Alt+S] Settings</Text>
+            </>
+          )}
+        </Box>
+      )}
 
       {/* Footer */}
       <Box marginTop={1} borderStyle="single" borderColor="gray" paddingX={1} justifyContent="space-between">
