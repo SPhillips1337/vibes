@@ -53,6 +53,32 @@ const App = () => {
       return;
     }
 
+    // Suppress nav/toggle keys while modal views or update process are active
+    if (pendingMission || pendingIntervention || updateStatus === 'updating') return;
+
+    // Handle global system navigation shortcuts (meta/Alt keys) first to prevent input leakage
+    if (key.meta) {
+      if (input === 'd') { setView('dashboard'); return; }
+      if (input === 'm') { setView('mission'); return; }
+      if (input === 't') { setView('trace'); return; }
+      if (key.shift && input === 't') { setView('task'); return; }
+      if (input === 's') { setView(prev => prev === 'settings' ? 'dashboard' : 'settings'); return; }
+      if (input === 'h') { setView(prev => prev === 'history' ? 'dashboard' : 'history'); return; }
+      if (input === 'l') { setView(prev => prev === 'log' ? 'dashboard' : 'log'); return; }
+      if (input === 'y') { toggleYoloMode(); return; }
+      if (input === 'n') {
+        resetMission();
+        setView('dashboard');
+        setFocusIndex(1);
+        return;
+      }
+      if (input === 'z') {
+        undoMission();
+        setView('dashboard');
+        return;
+      }
+    }
+
     // Suppress other global shortcuts while typing in a text field
     const isTyping = isIdle && view === 'dashboard'; 
     if (isTyping) {
@@ -75,31 +101,6 @@ const App = () => {
         if (session) deleteSession(session.mission.id);
       }
       return;
-    }
-
-    // Suppress nav/toggle keys while modal views or update process are active
-    if (pendingMission || pendingIntervention || updateStatus === 'updating') return;
-
-    if (key.meta) {
-      if (input === 'd') { setView('dashboard'); return; }
-      if (input === 'm') { setView('mission'); return; }
-      if (input === 't') { setView('trace'); return; }
-      if (key.shift && input === 't') { setView('task'); return; }
-      if (input === 's') { setView(prev => prev === 'settings' ? 'dashboard' : 'settings'); return; }
-      if (input === 'h') { setView(prev => prev === 'history' ? 'dashboard' : 'history'); return; }
-      if (input === 'l') { setView(prev => prev === 'log' ? 'dashboard' : 'log'); return; }
-      if (input === 'y') { toggleYoloMode(); return; }
-      if (input === 'n') {
-        resetMission();
-        setView('dashboard');
-        setFocusIndex(1);
-        return;
-      }
-      if (input === 'z') {
-        undoMission();
-        setView('dashboard');
-        return;
-      }
     }
   });
 
