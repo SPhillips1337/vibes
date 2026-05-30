@@ -7,7 +7,7 @@
     can launch it from anywhere by typing 'vibes'.
 #>
 
-$ErrorActionPreference = 'Continue'
+$ErrorActionPreference = 'Stop'
 
 $RepoUrl = 'https://github.com/SPhillips1337/Vibes.git'
 $InstallDir = "$HOME\Vibes"
@@ -40,7 +40,10 @@ if (Test-Path -LiteralPath $InstallDir) {
     }
     try {
         if (Test-Path -LiteralPath ".git") {
-            $null = git pull
+            & {
+                $ErrorActionPreference = 'Continue'
+                $null = git pull
+            }
             if ($LASTEXITCODE -ne 0) {
                 Write-Host 'Warning: Could not pull latest changes. Continuing...' -ForegroundColor Yellow
             }
@@ -50,7 +53,10 @@ if (Test-Path -LiteralPath $InstallDir) {
     }
 } else {
     Write-Host "Cloning Vibes to $InstallDir ..." -ForegroundColor Green
-    git clone $RepoUrl $InstallDir
+    & {
+        $ErrorActionPreference = 'Continue'
+        git clone $RepoUrl $InstallDir
+    }
     if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $InstallDir)) {
         Write-Host 'ERROR: Failed to clone repository or directory was not created.' -ForegroundColor Red
         exit 1
@@ -65,7 +71,10 @@ if (-not $?) {
     exit 1
 }
 try {
-    npm install
+    & {
+        $ErrorActionPreference = 'Continue'
+        npm install
+    }
     if ($LASTEXITCODE -ne 0) {
         Write-Host 'ERROR: npm install failed.' -ForegroundColor Red
         exit 1
@@ -73,7 +82,10 @@ try {
 
     # 5. Build Project
     Write-Host 'Building project...' -ForegroundColor Green
-    npm run build
+    & {
+        $ErrorActionPreference = 'Continue'
+        npm run build
+    }
     if ($LASTEXITCODE -ne 0) {
         Write-Host 'ERROR: Build failed.' -ForegroundColor Red
         exit 1
@@ -88,39 +100,56 @@ $EnvExample = Join-Path $InstallDir ".env.example"
 
 function Get-ExistingVal {
     param([string]$varName)
-    if (Test-Path -LiteralPath $EnvFile) {
-        $line = Get-Content -LiteralPath $EnvFile | Where-Object { $_ -match "^${varName}=" }
-        if ($line) {
-            return ($line -split '=', 2)[1]
+    try {
+        if (Test-Path -LiteralPath $EnvFile) {
+            $line = Get-Content -LiteralPath $EnvFile -ErrorAction SilentlyContinue | Where-Object { $_ -match "^${varName}=" }
+            if ($line) {
+                return ($line -split '=', 2)[1]
+            }
         }
+    } catch {
+        # Safe fallback
     }
-    if (Test-Path -LiteralPath $EnvExample) {
-        $line = Get-Content -LiteralPath $EnvExample | Where-Object { $_ -match "^${varName}=" }
-        if ($line) {
-            return ($line -split '=', 2)[1]
+    try {
+        if (Test-Path -LiteralPath $EnvExample) {
+            $line = Get-Content -LiteralPath $EnvExample -ErrorAction SilentlyContinue | Where-Object { $_ -match "^${varName}=" }
+            if ($line) {
+                return ($line -split '=', 2)[1]
+            }
         }
+    } catch {
+        # Safe fallback
     }
     return ""
 }
 
 function Update-EnvVar {
     param([string]$varName, [string]$value)
-    if (Test-Path -LiteralPath $EnvFile) {
-        $content = Get-Content -LiteralPath $EnvFile
-        $found = $false
-        for ($i = 0; $i -lt $content.Length; $i++) {
-            if ($content[$i] -match "^${varName}=") {
-                $content[$i] = "${varName}=${value}"
-                $found = $true
-                break
+    try {
+        if (Test-Path -LiteralPath $EnvFile) {
+            $content = Get-Content -LiteralPath $EnvFile -ErrorAction SilentlyContinue
+            if (-not $content) {
+                Add-Content -LiteralPath $EnvFile -Value "${varName}=${value}" -ErrorAction SilentlyContinue
+                return
             }
+            $found = $false
+            $contentArray = @($content)
+            for ($i = 0; $i -lt $contentArray.Length; $i++) {
+                if ($contentArray[$i] -match "^${varName}=") {
+                    $contentArray[$i] = "${varName}=${value}"
+                    $found = $true
+                    break
+                }
+            }
+            if (-not $found) {
+                $contentArray += "${varName}=${value}"
+            }
+            Set-Content -LiteralPath $EnvFile -Value $contentArray -ErrorAction SilentlyContinue
+        } else {
+            Add-Content -LiteralPath $EnvFile -Value "${varName}=${value}" -ErrorAction SilentlyContinue
         }
-        if (-not $found) {
-            $content += "${varName}=${value}"
-        }
-        Set-Content -LiteralPath $EnvFile -Value $content
-    } else {
-        Add-Content -LiteralPath $EnvFile -Value "${varName}=${value}"
+    } catch {
+        Write-Host "Warning: Failed to update LLM configuration variable $varName in .env: $_" -ForegroundColor Yellow
     }
 }
 
