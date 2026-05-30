@@ -63,6 +63,32 @@ update_env_var() {
     fi
 }
 
+prompt_bool() {
+    local prompt_text="$1"
+    local default_val="$2"
+    local default_yn="y"
+    if [[ "$default_val" == "false" || "$default_val" == "disabled" ]]; then
+        default_yn="n"
+    fi
+    
+    read -p "❓ ${prompt_text} (y/n) [$default_yn]: " input_yn
+    input_yn=${input_yn:-$default_yn}
+    
+    if [[ "$input_yn" =~ ^[Yy]$ ]]; then
+        if [[ "$default_val" == "enabled" || "$default_val" == "disabled" ]]; then
+            echo "enabled"
+        else
+            echo "true"
+        fi
+    else
+        if [[ "$default_val" == "enabled" || "$default_val" == "disabled" ]]; then
+            echo "disabled"
+        else
+            echo "false"
+        fi
+    fi
+}
+
 configure_env() {
     # Guard: only run in interactive mode
     if [ ! -t 0 ]; then
@@ -96,6 +122,40 @@ configure_env() {
     update_env_var "OLLAMA_BASE_URL" "$input_url"
     update_env_var "OLLAMA_MODEL" "$input_model"
     update_env_var "OLLAMA_API_KEY" "$input_key"
+
+    echo "⚙️  Agent Behavior & Execution Configuration"
+
+    local default_context=$(get_existing_val "CONTEXT_WINDOW")
+    default_context=${default_context:-64000}
+    read -p "Enter Context Window Size (tokens) [$default_context]: " input_context
+    input_context=${input_context:-$default_context}
+    update_env_var "CONTEXT_WINDOW" "$input_context"
+
+    local default_steps=$(get_existing_val "MAX_STEPS")
+    default_steps=${default_steps:-50}
+    read -p "Enter Max Steps per task [$default_steps]: " input_steps
+    input_steps=${input_steps:-$default_steps}
+    update_env_var "MAX_STEPS" "$input_steps"
+
+    local default_thinking=$(get_existing_val "THINKING_MODE")
+    default_thinking=${default_thinking:-enabled}
+    local input_thinking=$(prompt_bool "Enable Thinking Mode?" "$default_thinking")
+    update_env_var "THINKING_MODE" "$input_thinking"
+
+    local default_reviewer=$(get_existing_val "ENABLE_REVIEWER")
+    default_reviewer=${default_reviewer:-true}
+    local input_reviewer=$(prompt_bool "Enable Reviewer Swarm?" "$default_reviewer")
+    update_env_var "ENABLE_REVIEWER" "$input_reviewer"
+
+    local default_memory=$(get_existing_val "MEMORY_ENABLED")
+    default_memory=${default_memory:-true}
+    local input_memory=$(prompt_bool "Enable Long-Term Memory?" "$default_memory")
+    update_env_var "MEMORY_ENABLED" "$input_memory"
+
+    local default_multiagent=$(get_existing_val "MULTI_AGENT_ENABLED")
+    default_multiagent=${default_multiagent:-false}
+    local input_multiagent=$(prompt_bool "Enable Multi-Agent Mode?" "$default_multiagent")
+    update_env_var "MULTI_AGENT_ENABLED" "$input_multiagent"
     
     echo "✅ Configuration updated in $ENV_FILE"
 }
