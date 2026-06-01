@@ -21,6 +21,18 @@
     "memory": {
       "command": "npx",
       "args": ["-y", "@modelcontextprotocol/server-memory"]
+    },
+    "neo4j-semantic-search": {
+      "command": "/home/stephen/Documents/www/LLM-Codex-Reference-Vault/venv/bin/python",
+      "args": ["/home/stephen/Documents/www/LLM-Codex-Reference-Vault/mcp_server.py"],
+      "env": {
+        "NEO4J_URI": "bolt+ssc://neo4j.happymonkey.ai:7687",
+        "NEO4J_USER": "neo4j",
+        "NEO4J_PASSWORD": "${CODEX_NEO4J_PASSWORD}",
+        "OLLAMA_HOST": "http://192.168.5.157:1234",
+        "OLLAMA_API_KEY": "dummy",
+        "OLLAMA_EMBEDDING_MODEL": "text-embedding-nomic-embed-text-v1.5"
+      }
     }
   }
 }
