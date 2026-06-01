@@ -22,6 +22,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
   const fields = [
     { label: 'Ollama Model', key: 'OLLAMA_MODEL', type: 'select' },
+    { label: 'Planner Model (empty = same)', key: 'PLANNER_MODEL', type: 'text' },
     { label: 'Base URL', key: 'OLLAMA_BASE_URL', type: 'text' },
     { label: 'API Key', key: 'OLLAMA_API_KEY', type: 'text' },
     { label: 'Context Window', key: 'CONTEXT_WINDOW', type: 'number' },

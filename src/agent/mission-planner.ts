@@ -87,8 +87,9 @@ Constraints:
 
 9. A request for a "web app" means: HTML, CSS, and JavaScript files only. Not a build pipeline, not a service worker, not a deployment config — unless explicitly asked.`;
 
+    const plannerModel = config.PLANNER_MODEL || getModel();
     const response = await getOllamaClient().chat.completions.create({
-      model: getModel(),
+      model: plannerModel,
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: `Please plan a mission for the following request:\n\n<request>\n${description}\n</request>` },

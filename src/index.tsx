@@ -37,11 +37,18 @@ const App = () => {
   const [workspace, setWorkspace] = React.useState(process.env.VIBES_LAUNCH_DIR || process.cwd());
   const [view, setView] = React.useState<'dashboard' | 'mission' | 'task' | 'trace' | 'settings' | 'history' | 'log'>('dashboard');
   const [focusIndex, setFocusIndex] = React.useState(0);
+  const [isCodexEnabled, setIsCodexEnabled] = React.useState(settings.CODEX_ENABLED);
 
   const isIdle = !mission && !isPlanning && !pendingMission;
 
   useInput((input, key) => {
     if (key.ctrl && input === 'q') exit();
+    if (key.meta && input === 'c') {
+      const newVal = !isCodexEnabled;
+      setIsCodexEnabled(newVal);
+      saveSettings({ CODEX_ENABLED: newVal });
+      return;
+    }
 
     // Update notification keys (priority, use Alt to avoid typing conflict)
     if (key.meta && input === 'u' && updateInfo?.available && !updateDismissed && updateStatus === 'idle') {
@@ -125,6 +132,7 @@ const App = () => {
             <>
               <Text color="green">[Alt+N] New</Text>
               <Text color="red">[Alt+Z] Undo</Text>
+              <Text color={isCodexEnabled ? 'green' : 'gray'}>[Alt+C] Codex</Text>
               <Text color={isYoloMode ? 'yellow' : 'blue'} bold={isYoloMode}>[Alt+Y] YOLO</Text>
             </>
           )}

@@ -8,6 +8,7 @@ dotenv.config();
 const ConfigSchema = z.object({
   OLLAMA_BASE_URL: z.string().url().default('http://localhost:11434/v1'),
   OLLAMA_MODEL: z.string().default('gemma2:9b'),
+  PLANNER_MODEL: z.string().default(''),
   OLLAMA_API_KEY: z.string().default('ollama'),
   CONTEXT_WINDOW: z.coerce.number().default(32768),
   MAX_STEPS: z.coerce.number().default(25),

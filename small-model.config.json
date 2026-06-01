@@ -1,9 +1,12 @@
 {
   "OLLAMA_MODEL": "qwen3.5-2b-kimi-and-opus-distillation-i1",
+  "PLANNER_MODEL": "qwen3.6-27b-4bpw-16gb-vram",
   "OLLAMA_BASE_URL": "http://192.168.5.157:1234/v1",
   "CONTEXT_WINDOW": 16000,
   "ENABLE_REVIEWER": false,
   "MAX_CONCURRENT_TASKS": 1,
   "CODEX_ENABLED": true,
-  "CODEX_TOP_K": 3
+  "CODEX_TOP_K": 3,
+  "THINKING_MODE": false,
+  "YOLO_MODE": false
 }

@@ -21,17 +21,15 @@ export interface CodexSearchResponse {
 }
 
 class CodexService {
-  private enabled = false;
+  private inited = false;
 
   init(): void {
-    this.enabled = config.CODEX_ENABLED;
-    if (this.enabled) {
-      log('Codex service initialized (Neo4j semantic search RAG)', 'INFO');
-    }
+    this.inited = true;
+    log('Codex service initialized (Neo4j semantic search RAG)', 'INFO');
   }
 
   isEnabled(): boolean {
-    return this.enabled;
+    return config.CODEX_ENABLED;
   }
 
   async search(query: string, topK?: number): Promise<CodexSearchResponse> {
@@ -40,7 +38,8 @@ class CodexService {
       const { stdout, stderr } = await execAsync(PYTHON, [CODEX_SCRIPT, query, String(k)], {
         timeout: 30000,
         env: {
-          ...process.env,
+          PATH: process.env.PATH,
+          HOME: process.env.HOME,
           CODEX_OLLAMA_HOST: 'http://192.168.5.157:1234',
         },
       });
@@ -61,7 +60,7 @@ class CodexService {
   }
 
   async retrieveAndFormat(query: string): Promise<string> {
-    if (!this.enabled) return '';
+    if (!this.isEnabled()) return '';
 
     const response = await this.search(query, config.CODEX_TOP_K);
     if (response.count === 0) return '';
