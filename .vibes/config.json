@@ -1,0 +1,9 @@
+{
+  "OLLAMA_MODEL": "qwen3.5-2b-kimi-and-opus-distillation-i1",
+  "CONTEXT_WINDOW": 16000,
+  "ENABLE_REVIEWER": false,
+  "MAX_CONCURRENT_TASKS": 1,
+  "MEMORY_ENABLED": false,
+  "CODEX_ENABLED": true,
+  "CODEX_TOP_K": 3
+}
