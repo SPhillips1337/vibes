@@ -137,8 +137,8 @@ export class Scheduler {
       this.updateTaskInMission(updatedTask);
 
       if (updatedTask.status === 'done') {
-        // Optional Review Step
-        if (config.ENABLE_REVIEWER) {
+        // Optional Review Step — only for code tasks
+        if (config.ENABLE_REVIEWER && updatedTask.type === 'code') {
           const { Reviewer } = await import('./reviewer.js');
           const reviewer = new Reviewer();
           const review = await reviewer.reviewTask(updatedTask, this.mission);
@@ -154,6 +154,9 @@ export class Scheduler {
             await this.handleTaskFailure(updatedTask);
           }
         } else {
+          if (config.ENABLE_REVIEWER) {
+            log(`Skipping review for non-code task (type=${updatedTask.type}): ${updatedTask.title}`, 'INFO');
+          }
           this.completedTasks.add(task.id);
           this.onEvent?.({ type: 'task_completed', taskId: task.id, title: task.title });
         }

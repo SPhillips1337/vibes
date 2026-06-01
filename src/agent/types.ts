@@ -4,6 +4,9 @@ import { z } from 'zod';
 export const TaskStatusSchema = z.enum(['todo', 'in_progress', 'done', 'failed']);
 export type TaskStatus = z.infer<typeof TaskStatusSchema>;
 
+export const TaskTypeSchema = z.enum(['code', 'config', 'research', 'unknown']).default('unknown');
+export type TaskType = z.infer<typeof TaskTypeSchema>;
+
 export const TaskSchema = z.object({
   id: z.string(),
   title: z.string(),
@@ -12,6 +15,7 @@ export const TaskSchema = z.object({
   acceptance_criteria: z.array(z.string()).default([]),
   depends_on: z.array(z.string()).default([]),
   use_reviewer_model: z.boolean().optional(),
+  type: TaskTypeSchema,
   status: TaskStatusSchema.default('todo'),
   output: z.string().optional(),
   error: z.string().optional(),
