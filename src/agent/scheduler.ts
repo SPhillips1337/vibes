@@ -149,6 +149,21 @@ export class Scheduler {
             this.onEvent?.({ type: 'task_completed', taskId: task.id, title: task.title });
           } else {
             log(`Task REJECTED by reviewer: ${updatedTask.title}. Feedback: ${review.feedback}`, 'WARN');
+            if (!updatedTask.userGuidance) {
+              // First rejection: auto-retry with reviewer feedback as guidance
+              log(`Auto-retrying task with reviewer feedback: ${updatedTask.title}`, 'INFO');
+              updatedTask.status = 'todo';
+              updatedTask.error = undefined;
+              updatedTask.output = undefined;
+              updatedTask.userGuidance = `Reviewer feedback: ${review.feedback}\n\n${config.CODEX_ENABLED ? 'Also consult the knowledge base patterns for the correct approach.' : ''}`;
+              updatedTask.extraSteps = (updatedTask.extraSteps || 0) + 10;
+              this.completedTasks.delete(task.id);
+              this.taskMap.set(task.id, updatedTask);
+              this.runningTasks.delete(task.id);
+              // Main run() loop will pick up the reset task on next tick
+              return;
+            }
+            // Second rejection: escalate to user
             updatedTask.status = 'failed';
             updatedTask.error = `Review Rejected: ${review.feedback}`;
             await this.handleTaskFailure(updatedTask);
