@@ -25,6 +25,8 @@ const ConfigSchema = z.object({
   CONTEXT_COMPACTION_ENABLED: z.union([z.boolean(), z.string().transform(v => v === 'true')]).default(true),
   TRACE_DIR: z.string().optional(),
   LOCAL_MEMORY: z.union([z.boolean(), z.string().transform(v => v === 'true')]).default(false),
+  CODEX_ENABLED: z.union([z.boolean(), z.string().transform(v => v !== 'false')]).default(true),
+  CODEX_TOP_K: z.coerce.number().default(3),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;

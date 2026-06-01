@@ -6,6 +6,7 @@ import { config } from '../config.js';
 import { log, logObject } from '../logger.js';
 import { getMemoryService } from '../memory/index.js';
 import { getSkillsService } from '../skills/index.js';
+import { getCodexService } from '../mcp/codex-service.js';
 import {
   truncateToolResult,
   compressMessages,
@@ -212,6 +213,14 @@ export class TaskExecutor {
     const isYolo = getYoloMode();
     const skillsSection = this.skills.formatForSystemPrompt();
 
+    // Codex Context: Retrieve relevant patterns from Neo4j knowledge graph
+    let codexSection = '';
+    const codex = getCodexService();
+    if (codex.isEnabled()) {
+      const codexQuery = `${task.title} ${task.description} ${task.files.join(' ')}`;
+      codexSection = await codex.retrieveAndFormat(codexQuery);
+    }
+
     // Project Rules Discovery: Look for AGENTS.md, .cursorrules, or PROMPT.md
     let projectRules = '';
     const ruleFiles = ['AGENTS.md', '.cursorrules', 'PROMPT.md', 'DESIGN.md', 'GEMINI.md', 'CLAUDE.md', 'VIBES.md'];
@@ -252,6 +261,7 @@ ${projectRules}
 
 Skills:
 ${skillsSection}
+${codexSection}
 
 Mission Context: ${missionContext}
 Working Directory: ${workspaceRoot}
