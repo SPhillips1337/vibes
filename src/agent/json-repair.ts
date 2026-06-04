@@ -3,7 +3,9 @@
  */
 function extractJson(text: string): string {
   let trimmed = text.trim();
-  // Strip  ...  reasoning blocks (common in reasoning models like phi-4-mini)
+  // Strip <think> ... </think> reasoning blocks (common in deepseek/qwen thinking models)
+  trimmed = trimmed.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
+  // Strip ``` ... ``` code blocks
   trimmed = trimmed.replace(/^[\s\S]*?```/m, '').trim();
   if (!trimmed) trimmed = text.trim();
   // Try to find a complete JSON object: first '{' to matching '}'
