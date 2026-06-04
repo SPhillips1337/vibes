@@ -69,3 +69,8 @@
 - **Lesson:** Binding global view-switching commands to generic keys like `Home` and `End` intercepts them globally, breaking text cursor navigation in inputs and log scroll handlers in lists.
 - **Fix:** Guard global navigation shortcuts so they are disabled if a text input is active or the current view uses those keys locally for scrolling.
 
+### 10. Concurrent Session File Writes
+- **Lesson:** Writing session data at high frequencies (e.g. every 100ms on event buffers) triggers concurrent asynchronous filesystem operations on the same file path. This leads to write races, file truncation, and JSON corruption, causing syntax errors when other routines try to read the files.
+- **Fix:** Serialize write operations using a promise queue per session, and write files atomically by saving to a temporary path first and then renaming it.
+
+
