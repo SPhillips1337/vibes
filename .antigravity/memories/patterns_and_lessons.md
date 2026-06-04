@@ -73,4 +73,13 @@
 - **Lesson:** Writing session data at high frequencies (e.g. every 100ms on event buffers) triggers concurrent asynchronous filesystem operations on the same file path. This leads to write races, file truncation, and JSON corruption, causing syntax errors when other routines try to read the files.
 - **Fix:** Serialize write operations using a promise queue per session, and write files atomically by saving to a temporary path first and then renaming it.
 
+### 11. Silent Corruption Mitigation
+- **Lesson:** Pre-existing corrupted JSON files in data folders trigger repeating read failures and log stream pollution on every state update loop.
+- **Fix:** When a file fails to parse, log it once and rename it (e.g. `.json` to `.json.corrupted`) to exclude it from future directory searches while keeping the raw data available for recovery.
+
+### 12. Codex RAG Backoff on Connection Failure
+- **Lesson:** When a downstream database (like Neo4j) is offline, executing semantic/vector search queries loops through all candidates and retries, flooding TUI execution traces with standard connection failure warnings.
+- **Fix:** Detect network/connection errors (`ECONNREFUSED` / `Connection refused`) on the first query attempt, mark the service as offline, and back off (returning empty results immediately) for 5 minutes.
+
+
 
