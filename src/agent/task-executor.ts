@@ -7,6 +7,7 @@ import { log, logObject } from '../logger.js';
 import { getMemoryService } from '../memory/index.js';
 import { getSkillsService } from '../skills/index.js';
 import { getCodexService } from '../mcp/codex-service.js';
+import { detectTechStack } from './tech-stack.js';
 import {
   truncateToolResult,
   compressMessages,
@@ -217,7 +218,9 @@ export class TaskExecutor {
     let codexSection = '';
     const codex = getCodexService();
     if (codex.isEnabled()) {
-      const codexQuery = `${task.title} ${task.description} ${task.files.join(' ')}`;
+      const stack = detectTechStack(workspaceRoot);
+      const stackPrefix = stack.length > 0 ? `[tech-stack: ${stack.join(', ')}] ` : '';
+      const codexQuery = `${stackPrefix}${task.title} ${task.description} ${task.files.join(' ')}`;
       codexSection = await codex.retrieveAndFormat(codexQuery);
     }
 
