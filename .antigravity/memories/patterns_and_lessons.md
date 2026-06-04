@@ -30,6 +30,18 @@
 - **Pattern:** Position global system shortcuts (with modifiers like `Alt`) ABOVE the text-input suppression guards in the input handler.
 - **Why it works:** Allows the user to perform system actions (like Updating or Undoing) even while the cursor is focused in an active `TextInput` field, without characters leaking into the input.
 
+### 8. Markdown Tool Fallback Parser
+- **Pattern:** Add string-parsing fallbacks to catch manually written JSON code blocks when API-level tool calling fails or is unsupported.
+- **Why it works:** This enables agentic execution on smaller or buggy models that cannot render tool-calling schemas natively (like Gemma 12B or Phi-4-mini).
+
+### 9. Automated Self-Healing Verification Loops
+- **Pattern:** Wrap task completion in combined structural and build compilation check loops.
+- **Why it works:** If checks fail, passing compiler/linter errors back to the executor as task guidance lets them immediately correct syntax, import, or build failures before code review.
+
+### 10. Codex Snippet Context Compression
+- **Pattern:** Intelligently strip import statements, comments, and long duplicate snippets from retrieved code references.
+- **Why it works:** Decreases token usage by 50%+, protecting the smaller context windows of 3B-9B models from being flooded by irrelevant imports or comments.
+
 ## 🔴 Failure Lessons (Drag)
 
 ### 1. The "Ghost Retry" Bug
