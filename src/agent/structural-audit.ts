@@ -51,6 +51,107 @@ function collectFiles(root: string, extensions: string[]): string[] {
   return result;
 }
 
+function getDefinitionBraceDepth(content: string, identifier: string): number | null {
+  let braceDepth = 0;
+  let inLineComment = false;
+  let inBlockComment = false;
+  let inStr = false;
+  let stringChar = '';
+  let inTmpl = false;
+  const templateBraces: number[] = [];
+  let escaped = false;
+
+  for (let i = 0; i < content.length; i++) {
+    const ch = content[i];
+    const nextCh = content[i + 1] || '';
+
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+
+    if (inLineComment) {
+      if (ch === '\n') inLineComment = false;
+      continue;
+    }
+
+    if (inBlockComment) {
+      if (ch === '*' && nextCh === '/') {
+        inBlockComment = false;
+        i++;
+      }
+      continue;
+    }
+
+    if (ch === '\\' && (inStr || inTmpl)) {
+      escaped = true;
+      continue;
+    }
+
+    if (inStr) {
+      if (ch === stringChar) inStr = false;
+      continue;
+    }
+
+    if (inTmpl) {
+      if (ch === '`') {
+        inTmpl = false;
+      } else if (ch === '$' && nextCh === '{') {
+        templateBraces.push(braceDepth);
+        braceDepth = 0;
+        i++;
+        continue;
+      }
+    }
+
+    if (!inStr && !inTmpl) {
+      if (ch === '/' && nextCh === '/') {
+        inLineComment = true;
+        i++;
+        continue;
+      }
+      if (ch === '/' && nextCh === '*') {
+        inBlockComment = true;
+        i++;
+        continue;
+      }
+      if (ch === '"' || ch === "'") {
+        inStr = true;
+        stringChar = ch;
+        continue;
+      }
+      if (ch === '`') {
+        inTmpl = true;
+        continue;
+      }
+    }
+
+    const inTemplateString = inTmpl && templateBraces.length === 0;
+    if (!inStr && !inLineComment && !inBlockComment && !inTemplateString) {
+      const remaining = content.substring(i);
+      const declMatch = remaining.match(/^(const|let|var|function|class)\s+([a-zA-Z0-9_$]+)\b/);
+      if (declMatch && declMatch[2] === identifier) {
+        return braceDepth + templateBraces.reduce((a, b) => a + b, 0);
+      }
+
+      if (ch === '{') {
+        braceDepth++;
+      } else if (ch === '}') {
+        braceDepth--;
+        if (braceDepth < 0) {
+          if (templateBraces.length > 0) {
+            braceDepth = templateBraces.pop()!;
+          } else {
+            break;
+          }
+        }
+      }
+    }
+  }
+
+  return null;
+}
+
 export function runStructuralAudit(workspaceRoot: string, taskFiles: string[]): AuditIssue[] {
   const issues: AuditIssue[] = [];
   const srcDir = join(workspaceRoot, 'src');
@@ -167,43 +268,160 @@ export function runStructuralAudit(workspaceRoot: string, taskFiles: string[]): 
       }
     }
 
-    // Syntax check: Try to detect basic issues (unbalanced braces)
+    // Context hook & scope verification
+    const useContextRegex = /(?:React\.)?useContext\s*\(\s*([a-zA-Z0-9_$]+)\s*\)/g;
+    let ucMatch: RegExpExecArray | null;
+    while ((ucMatch = useContextRegex.exec(content)) !== null) {
+      const identifier = ucMatch[1];
+      const defDepth = getDefinitionBraceDepth(content, identifier);
+      if (defDepth !== null && defDepth > 0) {
+        issues.push({
+          type: 'syntax',
+          file: relFile,
+          message: `React context "${identifier}" is referenced in useContext() but is defined inside a nested scope/function (brace depth: ${defDepth}). It must be defined at the module scope to be accessible.`,
+        });
+      }
+    }
+
+    // Syntax check: Scan the file character-by-character to detect brace mismatch and nested createContext
     let braceDepth = 0;
+    let inLineComment = false;
+    let inBlockComment = false;
     let inStr = false;
-    let escaped = false;
+    let stringChar = '';
     let inTmpl = false;
+    const templateBraces: number[] = [];
+    let escaped = false;
     let syntaxError = false;
+
     for (let i = 0; i < content.length; i++) {
       const ch = content[i];
-      if (ch === '\\' && !escaped) { escaped = true; continue; }
-      if (ch === '"' || ch === "'") {
-        if (!inStr && !inTmpl) { inStr = true; }
-        else if (inStr && !escaped) { inStr = false; }
+      const nextCh = content[i + 1] || '';
+
+      if (escaped) {
+        escaped = false;
+        continue;
       }
-      if (ch === '`' && !inStr && !escaped) inTmpl = !inTmpl;
+
+      if (inLineComment) {
+        if (ch === '\n') inLineComment = false;
+        continue;
+      }
+
+      if (inBlockComment) {
+        if (ch === '*' && nextCh === '/') {
+          inBlockComment = false;
+          i++;
+        }
+        continue;
+      }
+
+      if (ch === '\\' && (inStr || inTmpl)) {
+        escaped = true;
+        continue;
+      }
+
+      if (inStr) {
+        if (ch === stringChar) inStr = false;
+        continue;
+      }
+
+      if (inTmpl) {
+        if (ch === '`') {
+          inTmpl = false;
+        } else if (ch === '$' && nextCh === '{') {
+          templateBraces.push(braceDepth);
+          braceDepth = 0;
+          i++;
+          continue;
+        }
+      }
+
       if (!inStr && !inTmpl) {
-        if (ch === '{') braceDepth++;
-        if (ch === '}') braceDepth--;
-        if (braceDepth < 0) { syntaxError = true; break; }
+        if (ch === '/' && nextCh === '/') {
+          inLineComment = true;
+          i++;
+          continue;
+        }
+        if (ch === '/' && nextCh === '*') {
+          inBlockComment = true;
+          i++;
+          continue;
+        }
+        if (ch === '"' || ch === "'") {
+          inStr = true;
+          stringChar = ch;
+          continue;
+        }
+        if (ch === '`') {
+          inTmpl = true;
+          continue;
+        }
       }
-      escaped = false;
+
+      const inTemplateString = inTmpl && templateBraces.length === 0;
+      if (!inStr && !inLineComment && !inBlockComment && !inTemplateString) {
+        // Detect createContext
+        if (ch === 'c' && content.substring(i).startsWith('createContext')) {
+          const after = content.substring(i + 'createContext'.length).trim();
+          if (after.startsWith('(')) {
+            const totalDepth = braceDepth + templateBraces.reduce((a, b) => a + b, 0);
+            if (totalDepth > 0) {
+              issues.push({
+                type: 'syntax',
+                file: relFile,
+                message: `React.createContext() called inside a nested function or component (depth: ${totalDepth}). Contexts must be defined at the module scope to avoid re-creation on every render.`,
+              });
+            }
+          }
+        }
+
+        if (ch === '{') {
+          braceDepth++;
+        } else if (ch === '}') {
+          braceDepth--;
+          if (braceDepth < 0) {
+            if (templateBraces.length > 0) {
+              braceDepth = templateBraces.pop()!;
+            } else {
+              syntaxError = true;
+              break;
+            }
+          }
+        }
+      }
     }
-    if (syntaxError || braceDepth !== 0) {
+
+    const finalBraceDepth = braceDepth + templateBraces.reduce((a, b) => a + b, 0);
+    if (syntaxError || finalBraceDepth !== 0) {
       issues.push({
         type: 'syntax',
         file: relFile,
-        message: syntaxError ? 'Unmatched closing brace' : `Unclosed braces (depth: ${braceDepth})`,
+        message: syntaxError ? 'Unmatched closing brace' : `Unclosed braces (depth: ${finalBraceDepth})`,
       });
     }
   }
 
-  // CSS orphan detection
+  // CSS orphan detection & JS import in CSS check
   for (const cssFile of cssFiles) {
+    const content = readFileSync(cssFile, 'utf8');
+    const relFile = relative(workspaceRoot, cssFile);
+
     if (!importedCssFiles.has(cssFile)) {
       issues.push({
         type: 'css_orphan',
-        file: relative(workspaceRoot, cssFile),
+        file: relFile,
         message: 'CSS file is not imported by any component',
+      });
+    }
+
+    // Strip CSS comments to avoid false matches in comments
+    const cleanCss = content.replace(/\/\*[\s\S]*?\*\//g, '');
+    if (/^\s*import\b/m.test(cleanCss)) {
+      issues.push({
+        type: 'syntax',
+        file: relFile,
+        message: 'CSS file uses JavaScript-style "import" syntax. Use CSS "@import" instead.',
       });
     }
   }
