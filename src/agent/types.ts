@@ -49,6 +49,8 @@ export const MissionSchema = z.object({
   workspace_root: z.string().default(process.cwd()),
   milestones: z.array(MilestoneSchema),
   status: z.enum(['planning', 'executing', 'completed', 'failed', 'awaiting_intervention']).default('planning'),
+  /** Tech stack detected at planning time — e.g. ['typescript', 'react', 'css'] */
+  tech_stack: z.array(z.string()).optional(),
 });
 
 export type Mission = z.infer<typeof MissionSchema>;

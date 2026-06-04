@@ -189,6 +189,7 @@ export class TaskExecutor {
     workspaceRoot: string,
     onEvent?: OnEvent,
     getYoloMode: () => boolean = () => config.YOLO_MODE,
+    techStack?: string[],
   ): Promise<Task> {
     log(`Executing task: ${task.title}`, 'INFO');
 
@@ -218,7 +219,7 @@ export class TaskExecutor {
     let codexSection = '';
     const codex = getCodexService();
     if (codex.isEnabled()) {
-      const stack = detectTechStack(workspaceRoot);
+      const stack = techStack ?? detectTechStack(workspaceRoot);
       const stackPrefix = stack.length > 0 ? `[tech-stack: ${stack.join(', ')}] ` : '';
       const codexQuery = `${stackPrefix}${task.title} ${task.description} ${task.files.join(' ')}`;
       codexSection = await codex.retrieveAndFormat(codexQuery);
@@ -251,6 +252,9 @@ export class TaskExecutor {
     }
 
     // KV-Cache Prefixing Hack: static elements at top, dynamic at bottom
+    const stackNote = techStack && techStack.length > 0
+      ? `Tech Stack: ${techStack.join(', ')}\n`
+      : '';
     const systemPrompt = `You are an autonomous agent executing a specific task.
 Rules:
 1. USE TOOLS HONESTLY. If a tool returns an error, YOU MUST ACKNOWLEDGE IT.
@@ -277,7 +281,7 @@ ${skillsSection}
 ${codexSection}
 
 Mission Context: ${missionContext}
-Working Directory: ${workspaceRoot}
+${stackNote}Working Directory: ${workspaceRoot}
 
 Task: ${task.title}
 Description: ${task.description}

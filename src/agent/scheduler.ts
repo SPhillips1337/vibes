@@ -134,8 +134,11 @@ export class Scheduler {
     this.onEvent?.({ type: 'task_started', taskId: task.id, title: task.title });
 
     try {
-      const missionContext = `Mission: ${this.mission.title}\nDescription: ${this.mission.description}`;
-      const updatedTask = await this.executor.executeTask(task, missionContext, this.mission.workspace_root, this.onEvent, this.getYoloMode);
+      const stackLine = this.mission.tech_stack && this.mission.tech_stack.length > 0
+        ? `\nTech Stack: ${this.mission.tech_stack.join(', ')}`
+        : '';
+      const missionContext = `Mission: ${this.mission.title}\nDescription: ${this.mission.description}${stackLine}`;
+      const updatedTask = await this.executor.executeTask(task, missionContext, this.mission.workspace_root, this.onEvent, this.getYoloMode, this.mission.tech_stack);
 
       this.updateTaskInMission(updatedTask);
 

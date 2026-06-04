@@ -5,6 +5,7 @@ import { Mission, MissionSchema } from './types.js';
 import { logObject, log } from '../logger.js';
 import { repairJson } from './json-repair.js';
 import { getMemoryService } from '../memory/index.js';
+import { detectTechStack } from './tech-stack.js';
 
 export class MissionPlanner {
   private memory = getMemoryService();
@@ -41,10 +42,18 @@ export class MissionPlanner {
       log(`Failed to discover project rules for planning: ${err instanceof Error ? err.message : String(err)}`, 'DEBUG');
     }
 
+    // Tech Stack Detection
+    const stack = detectTechStack(workspaceRoot);
+    log(`Mission planner: detected tech stack: ${stack.join(', ') || 'unknown'}`, 'INFO');
+    const stackContext = stack.length > 0
+      ? `\n[WORKSPACE TECH STACK]: ${stack.join(', ')}\nTailor all task file paths, languages, and implementation approaches to this stack.\n`
+      : '';
+
     const systemPrompt = `You are a mission planning agent. Break the mission into milestones and tasks.
 Output ONLY a JSON object.
 ${memoriesSection}
 ${projectRules}
+${stackContext}
 
 Structure:
 {
@@ -129,6 +138,7 @@ Constraints:
         id: uuidv4(),
         status: 'planning',
         workspace_root: workspaceRoot,
+        tech_stack: stack.length > 0 ? stack : undefined,
         milestones: rawPlan.milestones.map((m: any) => ({
           ...m,
           id: uuidv4(),
