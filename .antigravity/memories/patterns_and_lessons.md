@@ -81,5 +81,10 @@
 - **Lesson:** When a downstream database (like Neo4j) is offline, executing semantic/vector search queries loops through all candidates and retries, flooding TUI execution traces with standard connection failure warnings.
 - **Fix:** Detect network/connection errors (`ECONNREFUSED` / `Connection refused`) on the first query attempt, mark the service as offline, and back off (returning empty results immediately) for 5 minutes.
 
+### 13. React-specific Runtime Pitfalls
+- **Lesson:** Standard TypeScript validation does not catch silent React runtime styling or loading bugs, such as pseudo-selectors/pseudo-elements inside inline styles (silently ignored), spreading style objects directly onto tags as props (`{...style}`), static+lazy import duplication (doubling bundle size), or unused/dropped `ref` arguments in `React.forwardRef`.
+- **Fix:** Augment the pre-completion structural audit (`src/agent/structural-audit.ts`) to inspect TS/JS components for these specific patterns and reject the task for auto-retry if found.
+
+
 
 
