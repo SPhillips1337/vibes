@@ -97,6 +97,76 @@ export function runStructuralAudit(workspaceRoot: string, taskFiles: string[]): 
       }
     }
 
+    // Static + Dynamic (lazy) import check
+    const staticImports = new Set<string>();
+    const staticImportRegex = /import\s+[\s\S]*?from\s+['"]([^'"]+)['"]/g;
+    let staticMatch: RegExpExecArray | null;
+    while ((staticMatch = staticImportRegex.exec(content)) !== null) {
+      const resolved = resolveImportPath(dirname(file), staticMatch[1]);
+      if (resolved) {
+        staticImports.add(resolved);
+      }
+    }
+
+    const dynamicImportRegex = /import\s*\(\s*['"]([^'"]+)['"]\s*\)/g;
+    let dynamicMatch: RegExpExecArray | null;
+    while ((dynamicMatch = dynamicImportRegex.exec(content)) !== null) {
+      const resolved = resolveImportPath(dirname(file), dynamicMatch[1]);
+      if (resolved && staticImports.has(resolved)) {
+        issues.push({
+          type: 'import',
+          file: relFile,
+          message: `File is both statically and dynamically/lazily imported: "${dynamicMatch[1]}". This eagerly bundles the component, defeating the purpose of lazy loading.`,
+        });
+      }
+    }
+
+    // Style check 1: React inline style pseudo-selectors/pseudo-elements
+    const pseudoStyleRegex = /['"](::?|@)[a-zA-Z-]+['"]\s*:/g;
+    let pseudoMatch: RegExpExecArray | null;
+    while ((pseudoMatch = pseudoStyleRegex.exec(content)) !== null) {
+      issues.push({
+        type: 'prop_mismatch',
+        file: relFile,
+        message: `React inline styles do not support pseudo-elements, pseudo-classes, or media queries (found "${pseudoMatch[1]}"). Use standard CSS or style injection.`,
+      });
+    }
+
+    // Style check 2: Spreading 'style' directly onto JSX elements
+    if (/<[A-Za-z0-9_]+\s+[^>]*?\{\.\.\.style\}/.test(content)) {
+      issues.push({
+        type: 'prop_mismatch',
+        file: relFile,
+        message: `JSX element spreads the 'style' object directly onto the element (i.e. {...style}). This spreads style properties as React props instead of applying them to the style attribute. Use style={style} or style={{ ...style }}.`,
+      });
+    }
+
+    // React.forwardRef signature/usage check
+    const forwardRefMatch = content.match(/(?:React\.)?forwardRef\s*\(\s*(\([^)]*\)|[a-zA-Z0-9_$]+)\s*=>/);
+    if (forwardRefMatch) {
+      const paramsText = forwardRefMatch[1];
+      const params = paramsText.replace(/[()]/g, '').split(',').map(p => p.trim());
+      if (params.length < 2) {
+        issues.push({
+          type: 'syntax',
+          file: relFile,
+          message: `React.forwardRef drops the 'ref' parameter. The callback signature must accept two arguments: (props, ref).`,
+        });
+      } else {
+        const refName = params[1];
+        const escapedRefName = refName.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+        const refUsageRegex = new RegExp(`\\b${escapedRefName}\\b`, 'g');
+        const matches = content.match(refUsageRegex);
+        if (matches && matches.length === 1) {
+          issues.push({
+            type: 'syntax',
+            file: relFile,
+            message: `React.forwardRef is used but the 'ref' parameter ("${refName}") is unused in the component body.`,
+          });
+        }
+      }
+    }
+
     // Syntax check: Try to detect basic issues (unbalanced braces)
     let braceDepth = 0;
     let inStr = false;
