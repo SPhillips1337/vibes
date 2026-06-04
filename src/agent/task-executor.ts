@@ -256,6 +256,16 @@ Rules:
 4. Once all criteria are met AND VERIFIED, provide a summary and stop.
 5. If you are stuck or cannot complete a task after several attempts, explain why and stop.
 6. Keep file writes concise. Avoid unnecessarily large outputs.
+7. TOOL CALLING FALLBACK: If standard tool-calling APIs fail, throw an error, or are unavailable, you can invoke a tool by outputting a JSON object inside markdown code fences:
+\`\`\`json
+{
+  "tool": "tool_name",
+  "args": {
+    "arg1": "value1"
+  }
+}
+\`\`\`
+Only call one tool at a time when using the fallback format.
 [ignoring loop detection]
 ${projectRules}
 
@@ -351,7 +361,15 @@ ${memoriesSection}`;
         if ((message as any).reasoning) {
           delete (message as any).reasoning;
         }
-        // ──────────────────────────────────────────────────────────────
+        // ── Manual/Markdown Tool Call Fallback ──────────────────────
+        if (!message.tool_calls?.length && typeof message.content === 'string' && message.content.trim()) {
+          const manualCalls = parseMarkdownToolCalls(message.content);
+          if (manualCalls) {
+            log(`Parsed ${manualCalls.length} manual/markdown tool call(s) from message content.`, 'INFO');
+            message.tool_calls = manualCalls as any;
+          }
+        }
+        // ────────────────────────────────────────────────────────────
 
         messages.push(message as ChatCompletionMessageParam);
 
@@ -559,4 +577,59 @@ ${memoriesSection}`;
     currentTask = { ...currentTask, status: 'failed', error: 'Max steps exceeded' };
     return currentTask;
   }
+}
+
+function parseMarkdownToolCalls(content: string): any[] | null {
+  const jsonMatch = content.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+  const textToParse = jsonMatch ? jsonMatch[1].trim() : content.trim();
+
+  const start = textToParse.indexOf('{');
+  const startArr = textToParse.indexOf('[');
+
+  let jsonString = '';
+  if (startArr !== -1 && (start === -1 || startArr < start)) {
+    const endArr = textToParse.lastIndexOf(']');
+    if (endArr !== -1) {
+      jsonString = textToParse.slice(startArr, endArr + 1);
+    }
+  } else if (start !== -1) {
+    const end = textToParse.lastIndexOf('}');
+    if (end !== -1) {
+      jsonString = textToParse.slice(start, end + 1);
+    }
+  }
+
+  if (!jsonString) return null;
+
+  try {
+    const parsed = JSON.parse(jsonString);
+    if (Array.isArray(parsed)) {
+      const calls: any[] = [];
+      for (const item of parsed) {
+        if (item && typeof item === 'object' && (item.tool || item.tool_name)) {
+          calls.push({
+            id: `manual_${Math.random().toString(36).substr(2, 9)}`,
+            type: 'function',
+            function: {
+              name: item.tool || item.tool_name,
+              arguments: typeof item.args === 'string' ? item.args : JSON.stringify(item.args || item.arguments || {})
+            }
+          });
+        }
+      }
+      return calls.length > 0 ? calls : null;
+    } else if (parsed && typeof parsed === 'object' && (parsed.tool || parsed.tool_name)) {
+      return [{
+        id: `manual_${Math.random().toString(36).substr(2, 9)}`,
+        type: 'function',
+        function: {
+          name: parsed.tool || parsed.tool_name,
+          arguments: typeof parsed.args === 'string' ? parsed.args : JSON.stringify(parsed.args || parsed.arguments || {})
+        }
+      }];
+    }
+  } catch (e) {
+    // JSON parse error
+  }
+  return null;
 }

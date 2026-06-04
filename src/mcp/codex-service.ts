@@ -135,20 +135,36 @@ class CodexService {
     for (let i = 0; i < response.results.length; i++) {
       const r = response.results[i];
       result += `\n--- Reference ${i + 1} (Score: ${r.score}) | Source: ${r.document} ---\n`;
-      result += r.text.slice(0, 600);
-      if (r.text.length > 600) result += '...';
+      result += r.text.slice(0, 400);
+      if (r.text.length > 400) result += '...';
       if (r.code_snippets.length > 0) {
         result += '\n\nExample code:\n';
         for (const s of r.code_snippets.slice(0, 2)) {
-          result += `\`\`\`${s.lang}\n${s.code.slice(0, 400)}`;
-          if (s.code.length > 400) result += '\n...';
-          result += '\n```\n';
+          const compressed = compressCodeSnippet(s.code);
+          result += `\`\`\`${s.lang}\n${compressed}\n\`\`\`\n`;
         }
       }
     }
     result += '\n\n[END CODEX REFERENCE PATTERNS]';
     return result;
   }
+}
+
+function compressCodeSnippet(code: string): string {
+  // Strip import statements
+  let clean = code.replace(/^\s*import\s+[\s\S]*?;/gm, '');
+  // Strip multi-line comments
+  clean = clean.replace(/\/\*[\s\S]*?\*\//g, '');
+  // Strip single-line comments
+  clean = clean.replace(/^\s*\/\/.*$/gm, '');
+
+  // Clean up excessive blank lines
+  clean = clean.replace(/\n\s*\n+/g, '\n').trim();
+
+  if (clean.length > 500) {
+    return clean.slice(0, 500) + '\n...';
+  }
+  return clean;
 }
 
 let instance: CodexService | undefined;

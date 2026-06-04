@@ -5,6 +5,9 @@ import { log } from '../logger.js';
 import { InterventionManager } from './intervention-manager.js';
 import { getMemoryService } from '../memory/index.js';
 import { runStructuralAudit } from './structural-audit.js';
+import { execSync } from 'child_process';
+import { existsSync, readFileSync } from 'fs';
+import { join } from 'path';
 
 export type InterventionResolution = {
   action: 'retry' | 'skip' | 'fail' | 'reply';
@@ -146,22 +149,9 @@ export class Scheduler {
           if (review.approved) {
             log(`Task approved by reviewer: ${updatedTask.title}`, 'INFO');
 
-            // Structural audit phase — catches orphaned CSS, broken imports, syntax errors
-            if (config.ENABLE_STRUCTURAL_AUDIT && updatedTask.files.length > 0) {
-              const auditIssues = runStructuralAudit(this.mission.workspace_root, updatedTask.files);
-              if (auditIssues.length > 0) {
-                log(`Structural audit found ${auditIssues.length} issue(s), auto-retrying: ${updatedTask.title}`, 'WARN');
-                updatedTask.auditIssues = auditIssues;
-                updatedTask.status = 'todo';
-                updatedTask.error = undefined;
-                updatedTask.output = undefined;
-                updatedTask.userGuidance = `Structural audit found issues:\n${auditIssues.map(i => `- [${i.type}] ${i.file}: ${i.message}`).join('\n')}\n\nFix all audit issues before completing.`;
-                updatedTask.extraSteps = (updatedTask.extraSteps || 0) + 10;
-                this.completedTasks.delete(task.id);
-                this.taskMap.set(task.id, updatedTask);
-                this.runningTasks.delete(task.id);
-                return;
-              }
+            // Verification phase — catches orphaned CSS, broken imports, syntax errors, and build failures
+            if (!this.verifyTask(task, updatedTask)) {
+              return;
             }
 
             this.completedTasks.add(task.id);
@@ -192,22 +182,9 @@ export class Scheduler {
             log(`Skipping review for non-code task (type=${updatedTask.type}): ${updatedTask.title}`, 'INFO');
           }
 
-          // Structural audit phase (for non-reviewer path)
-          if (config.ENABLE_STRUCTURAL_AUDIT && updatedTask.files.length > 0) {
-            const auditIssues = runStructuralAudit(this.mission.workspace_root, updatedTask.files);
-            if (auditIssues.length > 0) {
-              log(`Structural audit found ${auditIssues.length} issue(s), auto-retrying: ${updatedTask.title}`, 'WARN');
-              updatedTask.auditIssues = auditIssues;
-              updatedTask.status = 'todo';
-              updatedTask.error = undefined;
-              updatedTask.output = undefined;
-              updatedTask.userGuidance = `Structural audit found issues:\n${auditIssues.map(i => `- [${i.type}] ${i.file}: ${i.message}`).join('\n')}\n\nFix all audit issues before completing.`;
-              updatedTask.extraSteps = (updatedTask.extraSteps || 0) + 10;
-              this.completedTasks.delete(task.id);
-              this.taskMap.set(task.id, updatedTask);
-              this.runningTasks.delete(task.id);
-              return;
-            }
+          // Verification phase (for non-reviewer path)
+          if (!this.verifyTask(task, updatedTask)) {
+            return;
           }
 
           this.completedTasks.add(task.id);
@@ -318,6 +295,42 @@ export class Scheduler {
     this.onEvent?.({ type: 'steps_updated', taskId: task.id, extraSteps: task.extraSteps });
   }
 
+  private verifyTask(task: Task, updatedTask: Task): boolean {
+    let auditIssuesMessage = '';
+    let auditIssuesList: any[] = [];
+
+    if (updatedTask.files.length > 0) {
+      if (config.ENABLE_STRUCTURAL_AUDIT) {
+        const auditIssues = runStructuralAudit(this.mission.workspace_root, updatedTask.files);
+        if (auditIssues.length > 0) {
+          auditIssuesList = auditIssues;
+          auditIssuesMessage = `Structural audit found issues:\n${auditIssues.map(i => `- [${i.type}] ${i.file}: ${i.message}`).join('\n')}\n\n`;
+        }
+      }
+
+      const buildErrors = runBuildCheck(this.mission.workspace_root);
+      if (buildErrors.length > 0) {
+        auditIssuesMessage += `Build compilation failed with errors:\n${buildErrors.map(e => `- ${e}`).join('\n')}\n\n`;
+      }
+    }
+
+    if (auditIssuesMessage) {
+      log(`Verification failed for task: ${updatedTask.title}`, 'WARN');
+      updatedTask.auditIssues = auditIssuesList.length > 0 ? auditIssuesList : undefined;
+      updatedTask.status = 'todo';
+      updatedTask.error = undefined;
+      updatedTask.output = undefined;
+      updatedTask.userGuidance = `${auditIssuesMessage}Fix all structural and build compilation issues before completing the task.`;
+      updatedTask.extraSteps = (updatedTask.extraSteps || 0) + 10;
+      this.completedTasks.delete(task.id);
+      this.taskMap.set(task.id, updatedTask);
+      this.runningTasks.delete(task.id);
+      return false;
+    }
+
+    return true;
+  }
+
   private markDependentsFailed(failedTaskId: string) {
     for (const [id, task] of this.taskMap) {
       if (task.depends_on.includes(failedTaskId) && task.status === 'todo') {
@@ -346,5 +359,30 @@ export class Scheduler {
       milestone.tasks.push(newTask);
       this.taskMap.set(newTask.id, newTask);
     }
+  }
+}
+
+function runBuildCheck(workspaceRoot: string): string[] {
+  try {
+    const pkgPath = join(workspaceRoot, 'package.json');
+    if (!existsSync(pkgPath)) return [];
+
+    const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'));
+    if (!pkg.scripts || !pkg.scripts.build) return [];
+
+    log('Running workspace build verification check...', 'INFO');
+    execSync('npm run build', { cwd: workspaceRoot, stdio: 'pipe' });
+    return [];
+  } catch (error: any) {
+    const stdout = error.stdout ? error.stdout.toString() : '';
+    const stderr = error.stderr ? error.stderr.toString() : '';
+    const output = `${stdout}\n${stderr}`;
+
+    const errorLines = output
+      .split('\n')
+      .map(line => line.trim())
+      .filter(line => line.includes('error TS') || line.includes('Error:') || line.includes('Failed to compile') || line.includes('ValidationError'));
+
+    return errorLines.length > 0 ? errorLines.slice(0, 8) : [error.message || 'Build compilation check failed'];
   }
 }
