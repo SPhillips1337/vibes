@@ -23,6 +23,8 @@ export interface CodexSearchResponse {
 
 class CodexService {
   private inited = false;
+  private offline = false;
+  private lastOfflineCheck = 0;
 
   init(): void {
     if (!existsSync(CODEX_SCRIPT)) {
@@ -60,6 +62,15 @@ class CodexService {
   }
 
   async search(query: string, topK?: number): Promise<CodexSearchResponse> {
+    if (!this.isEnabled()) return { results: [], count: 0 };
+
+    if (this.offline) {
+      if (Date.now() - this.lastOfflineCheck < 300000) { // 5 minutes backoff
+        return { results: [], count: 0 };
+      }
+      this.offline = false;
+    }
+
     const k = topK ?? config.CODEX_TOP_K;
     const hostCandidates = [
       undefined,
@@ -77,7 +88,19 @@ class CodexService {
           const stderr = err?.stderr ? String(err.stderr) : '';
           const stdout = err?.stdout ? String(err.stdout) : '';
           const message = String(err?.message ?? err);
-          const transient = /timeout|timed out|ECONNRESET|ETIMEDOUT|EAI_AGAIN|503|502|429|temporarily|Connection refused/i.test(
+
+          const isConnectionError = /Connection refused|Couldn't connect|neo4j|ECONNREFUSED/i.test(
+            `${message}\n${stderr}\n${stdout}`
+          );
+
+          if (isConnectionError) {
+            log(`Codex search failed due to Neo4j/network connection error. Temporarily disabling Codex search for 5 minutes.`, 'WARN');
+            this.offline = true;
+            this.lastOfflineCheck = Date.now();
+            return { results: [], count: 0 };
+          }
+
+          const transient = /timeout|timed out|ECONNRESET|ETIMEDOUT|EAI_AGAIN|503|502|429|temporarily/i.test(
             `${message}\n${stderr}\n${stdout}`,
           );
           log(

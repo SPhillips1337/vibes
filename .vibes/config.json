@@ -1,7 +1,7 @@
 {
   "OLLAMA_MODEL": "qwen3.5-9b-deepseek-v4-flash",
   "PLANNER_MODEL": "microsoft/phi-4-mini-reasoning",
-  "CONTEXT_WINDOW": 262144,
+  "CONTEXT_WINDOW": 128710,
   "ENABLE_REVIEWER": true,
   "MAX_CONCURRENT_TASKS": 2,
   "MEMORY_ENABLED": false,

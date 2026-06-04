@@ -75,7 +75,13 @@ export class SessionService {
           const content = await fs.readFile(path.join(this.sessionsDir, file), 'utf8');
           sessions.push(JSON.parse(content));
         } catch (err) {
-          log(`Failed to read session file ${file}: ${err instanceof Error ? err.message : String(err)}`, 'DEBUG');
+          const filePath = path.join(this.sessionsDir, file);
+          log(`Failed to read session file ${file}: ${err instanceof Error ? err.message : String(err)}. Renaming to corrupted.`, 'WARN');
+          try {
+            await fs.rename(filePath, `${filePath}.corrupted`);
+          } catch (renameErr) {
+            log(`Failed to rename corrupted session file ${file}: ${renameErr}`, 'ERROR');
+          }
         }
       }
       
