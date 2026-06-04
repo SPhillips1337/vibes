@@ -94,9 +94,5 @@
 - **Fix:** Detect network/connection errors (`ECONNREFUSED` / `Connection refused`) on the first query attempt, mark the service as offline, and back off (returning empty results immediately) for 5 minutes.
 
 ### 13. React-specific Runtime Pitfalls
-- **Lesson:** Standard TypeScript validation does not catch silent React runtime styling or loading bugs, such as pseudo-selectors/pseudo-elements inside inline styles (silently ignored), spreading style objects directly onto tags as props (`{...style}`), static+lazy import duplication (doubling bundle size), or unused/dropped `ref` arguments in `React.forwardRef`.
-- **Fix:** Augment the pre-completion structural audit (`src/agent/structural-audit.ts`) to inspect TS/JS components for these specific patterns and reject the task for auto-retry if found.
-
-
-
-
+- **Lesson:** Standard TypeScript validation does not catch silent React runtime styling, loading, or hook bugs. These include pseudo-selectors/pseudo-elements inside inline styles, spreading style objects directly onto JSX elements, static+lazy import duplication, unused/dropped `ref` parameters in `React.forwardRef`, calling `React.createContext()` inside component render functions (creating a new context every render), referencing out-of-scope contexts/variables in `useContext`, or using JS-style `import` syntax in `.css` files.
+- **Fix:** Augment the pre-completion structural audit (`src/agent/structural-audit.ts`) to perform token-level bracket depth analyses, context definition scope verification, and CSS import pattern checks. Reject the task for auto-retry if any violation is detected.
