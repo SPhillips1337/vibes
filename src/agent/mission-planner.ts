@@ -3,7 +3,7 @@ import { getOllamaClient, getModel } from '../ollama-client.js';
 import { config } from '../config.js';
 import { Mission, MissionSchema } from './types.js';
 import { logObject, log } from '../logger.js';
-import { repairJson } from './json-repair.js';
+import { repairJson, extractJsonContent } from './json-repair.js';
 import { getMemoryService } from '../memory/index.js';
 import { detectTechStack } from './tech-stack.js';
 
@@ -115,6 +115,12 @@ Constraints:
     if (!content) {
       throw new Error('Failed to get response from mission planner');
     }
+
+    // Strip reasoning blocks before attempting any JSON parse.
+    // Reasoning models (DeepSeek-R1, Qwen-QwQ, etc.) prepend <think>...</think>
+    // to their output. extractJsonContent handles both closed and unclosed tags.
+    content = extractJsonContent(content);
+    log(`Planner content after think-strip (first 120 chars): ${content.slice(0, 120)}`, 'DEBUG');
 
     let rawPlan;
     try {
