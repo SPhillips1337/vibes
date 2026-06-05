@@ -27,6 +27,12 @@ function isBlockResult(v: BeforeToolCallResult | void | undefined): v is BeforeT
  * context compaction, and tool-result validation.
  */
 export function createDefaultHooks(getYoloMode: () => boolean, emit?: (evt: ExecutionEvent) => void): AgentLoopHooks {
+  // Fix 2: Incremental thrash-detection state, scoped to this hook instance.
+  // Replaces the O(n²) rebuild-from-full-history approach with an O(1)-per-step
+  // bounded Map<callHash, count>. Evicts oldest entries once cap is reached.
+  const _thrashCallCounts = new Map<string, number>();
+  const _THRASH_MAP_MAX = 500;
+
   return {
     // beforeToolCall: no-op by default (validation is done inline via Zod)
     beforeToolCall: async () => undefined,
@@ -37,37 +43,28 @@ export function createDefaultHooks(getYoloMode: () => boolean, emit?: (evt: Exec
       return undefined;
     },
 
-  // shouldStopAfterTurn: inline thrash detection (same logic as legacy path)
-  shouldStopAfterTurn: async ({ message, toolResults, newMessages }) => {
-    const assistantMsg = message as any;
-    if (!assistantMsg?.tool_calls?.length) return false;
-    // Build callHistory from ALL previous accumulated messages in newMessages,
-    // not just the current turn — so thrash detection spans the whole session.
-    const callHistory: string[] = [];
-    if (Array.isArray(newMessages)) {
-      for (const msg of newMessages) {
-        // Exclude the current message to avoid double-counting it during repeats check
-        if ((msg as any) === (message as any)) continue;
-        const tc = (msg as any)?.tool_calls as any[] | undefined;
-        if (Array.isArray(tc)) {
-          for (const t of tc) {
-            const callHash = `${t.function.name}:${JSON.stringify(t.function.arguments)}`;
-            if (callHash) callHistory.push(callHash);
-          }
+    // shouldStopAfterTurn: incremental thrash detection — O(1) per step.
+    // Counts occurrences of each unique tool+args hash across the session
+    // without scanning the full messages array on every turn.
+    shouldStopAfterTurn: async ({ message }) => {
+      const assistantMsg = message as any;
+      if (!assistantMsg?.tool_calls?.length) return false;
+      const threshold = getYoloMode() ? 10 : 3;
+
+      for (const tc of assistantMsg.tool_calls) {
+        const callHash = `${tc.function.name}:${JSON.stringify(tc.function.arguments)}`;
+        // Evict oldest entry before inserting a new key to keep map bounded
+        if (_thrashCallCounts.size >= _THRASH_MAP_MAX && !_thrashCallCounts.has(callHash)) {
+          _thrashCallCounts.delete(_thrashCallCounts.keys().next().value!);
+        }
+        const count = (_thrashCallCounts.get(callHash) ?? 0) + 1;
+        _thrashCallCounts.set(callHash, count);
+        if (count >= threshold) {
+          return true;
         }
       }
-    }
-    const threshold = getYoloMode() ? 10 : 3;
-    for (const tc of assistantMsg.tool_calls) {
-      const callHash = `${tc.function.name}:${JSON.stringify(tc.function.arguments)}`;
-      callHistory.push(callHash);
-      const repeats = callHistory.filter(h => h === callHash).length;
-      if (repeats >= threshold) {
-        return true;
-      }
-    }
-    return false;
-  },
+      return false;
+    },
 
     // transformContext: compact context via Pi-style HEAD + summary + TAIL
     transformContext: async ({ messages }) => {
@@ -312,6 +309,15 @@ ${memoriesSection}`;
       }
 
       try {
+        // Fix 1: Hard cap by message count — force compaction regardless of token budget.
+        // Prevents unbounded JS heap growth when many steps with small outputs accumulate.
+        // MSG_HARD_CAP of 150 retains head (2) + summary + ample tail while bounding the array.
+        const MSG_HARD_CAP = 150;
+        if (messages.length > MSG_HARD_CAP) {
+          log(`Message hard-cap hit (${messages.length} msgs): forcing compaction`, 'WARN');
+          messages = compressMessages(messages, true);
+        }
+
         // Context window management: hook-primary, compressMessages as fallback
         if (this.hooks?.transformContext) {
           const budget = config.CONTEXT_WINDOW - 4096;

@@ -3,11 +3,25 @@ import { config } from '../config.js';
 import { log } from '../logger.js';
 import { encode, decode } from 'gpt-tokenizer';
 
+// Fix 3: Module-level LRU-style cache for token counts.
+// Prevents re-encoding identical strings (e.g. the static system prompt) on every step.
+// Uses insertion-order eviction to stay bounded at TOKEN_CACHE_MAX entries.
+const TOKEN_COUNT_CACHE = new Map<string, number>();
+const TOKEN_CACHE_MAX = 512;
+
 const RESPONSE_RESERVE_TOKENS = 4096;
 const TOOL_SCHEMA_RESERVE_TOKENS = 2048;
 
 export function estimateTokens(text: string): number {
-  return encode(text).length;
+  const cached = TOKEN_COUNT_CACHE.get(text);
+  if (cached !== undefined) return cached;
+  const count = encode(text).length;
+  // Evict oldest entry to keep cache bounded (Map preserves insertion order)
+  if (TOKEN_COUNT_CACHE.size >= TOKEN_CACHE_MAX) {
+    TOKEN_COUNT_CACHE.delete(TOKEN_COUNT_CACHE.keys().next().value!);
+  }
+  TOKEN_COUNT_CACHE.set(text, count);
+  return count;
 }
 
 export function estimateMessagesTokens(messages: ChatCompletionMessageParam[]): number {
@@ -55,12 +69,14 @@ export function truncateToolResult(content: string, toolName: string): string {
  * compressMessages — synchronous context summarisation.
  * Delegates to the new compaction module.
  */
-export function compressMessages(messages: ChatCompletionMessageParam[]): ChatCompletionMessageParam[] {
+export function compressMessages(messages: ChatCompletionMessageParam[], force = false): ChatCompletionMessageParam[] {
   // Avoid circular import: compaction.ts imports estimateTokens from here,
   // so we embed the summarisation logic here and expose it under both names.
+  // `force = true` bypasses the token-budget check — used by the message count hard-cap
+  // to prevent unbounded heap growth even when individual messages are small.
   const budget = getUsableBudget();
   const currentTokens = estimateMessagesTokens(messages);
-  if (currentTokens <= budget) return messages;
+  if (!force && currentTokens <= budget) return messages;
 
   log(`Context compression triggered: ~${currentTokens} tokens exceeds ~${budget} budget`, 'WARN');
 
