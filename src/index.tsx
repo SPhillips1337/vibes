@@ -33,6 +33,7 @@ const App = () => {
   } = useUpdateCheck();
 
   const { settings, availableModels, saveSettings } = useSettings();
+  const closeSettings = React.useCallback(() => setView('dashboard'), []);
 
   const [workspace, setWorkspace] = React.useState(process.env.VIBES_LAUNCH_DIR || process.cwd());
   const [view, setView] = React.useState<'dashboard' | 'mission' | 'task' | 'trace' | 'settings' | 'history' | 'log'>('dashboard');
@@ -203,7 +204,7 @@ const App = () => {
             settings={settings}
             availableModels={availableModels}
             onSave={saveSettings}
-            onClose={() => setView('dashboard')}
+            onClose={closeSettings}
           />
         )}
 

@@ -34,25 +34,35 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     { label: 'Reviewer Model', key: 'REVIEWER_MODEL', type: 'select' },
   ];
 
-  useInput((input, key) => {
-    if (key.escape || (key.meta && input === 's')) {
+  // Sync tempSettings when the parent settings prop changes (e.g. after a save
+  // propagates back up).  Without this, tempSettings goes stale after the first
+  // field save and subsequent renders show outdated values.
+  React.useEffect(() => {
+    setTempSettings(settings);
+  }, [settings]);
+
+  // NOTE: rename destructured `key` → `pressedKey` to avoid shadowing
+  // `currentField.key` (a string), which previously caused all keyboard
+  // guard checks like `key.return` to silently evaluate against the string.
+  useInput((input, pressedKey) => {
+    if (pressedKey.escape || (pressedKey.meta && input === 's')) {
       onClose();
     }
-    if (key.tab) {
+    if (pressedKey.tab && !pressedKey.shift) {
       setFocusIndex((prev) => (prev + 1) % fields.length);
       setStatus('idle');
     }
-    if (key.shift && key.tab) {
+    if (pressedKey.shift && pressedKey.tab) {
       setFocusIndex((prev) => (prev - 1 + fields.length) % fields.length);
       setStatus('idle');
     }
-    
+
     // Generic boolean toggle for any focused boolean field
     const currentField = fields[focusIndex];
-    if (currentField?.type === 'boolean' && (input === ' ' || key.return)) {
-      const key = currentField.key as keyof Config;
-      const newVal = !tempSettings[key];
-      handleSave(key, newVal);
+    if (currentField?.type === 'boolean' && (input === ' ' || pressedKey.return)) {
+      const fieldKey = currentField.key as keyof Config;
+      const newVal = !tempSettings[fieldKey];
+      handleSave(fieldKey, newVal);
     }
   });
 
@@ -86,7 +96,14 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               <Select
                 options={modelOptions}
                 defaultValue={tempSettings[field.key as keyof Config] as string}
-                onChange={(val) => handleSave(field.key as keyof Config, val)}
+                onChange={(val) => {
+                  // Guard: Select fires onChange on mount with the current value.
+                  // Only save when the value actually changes to prevent the
+                  // mount-time trigger that caused the infinite re-render loop.
+                  if (val !== tempSettings[field.key as keyof Config]) {
+                    handleSave(field.key as keyof Config, val);
+                  }
+                }}
               />
             ) : field.type === 'select' ? (
               <Text color="gray">{tempSettings[field.key as keyof Config]}</Text>
