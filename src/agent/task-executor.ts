@@ -27,11 +27,9 @@ function isBlockResult(v: BeforeToolCallResult | void | undefined): v is BeforeT
  * context compaction, and tool-result validation.
  */
 export function createDefaultHooks(getYoloMode: () => boolean, emit?: (evt: ExecutionEvent) => void): AgentLoopHooks {
-  // Fix 2: Incremental thrash-detection state, scoped to this hook instance.
-  // Replaces the O(n²) rebuild-from-full-history approach with an O(1)-per-step
-  // bounded Map<callHash, count>. Evicts oldest entries once cap is reached.
-  const _thrashCallCounts = new Map<string, number>();
-  const _THRASH_MAP_MAX = 500;
+  // Track consecutive turn tool execution sequences to detect thrashing/infinite loops.
+  // We keep a history of the tool sequences from the last N turns.
+  const _consecutiveTurnToolSequences: string[] = [];
 
   return {
     // beforeToolCall: no-op by default (validation is done inline via Zod)
@@ -43,23 +41,30 @@ export function createDefaultHooks(getYoloMode: () => boolean, emit?: (evt: Exec
       return undefined;
     },
 
-    // shouldStopAfterTurn: incremental thrash detection — O(1) per step.
-    // Counts occurrences of each unique tool+args hash across the session
-    // without scanning the full messages array on every turn.
+    // shouldStopAfterTurn: consecutive turn-based thrash detection.
+    // Checks if the agent has executed the exact same sequence of tool calls
+    // (same tool names and arguments) for multiple consecutive turns.
     shouldStopAfterTurn: async ({ message }) => {
       const assistantMsg = message as any;
       if (!assistantMsg?.tool_calls?.length) return false;
-      const threshold = getYoloMode() ? 10 : 3;
+      
+      const threshold = getYoloMode() ? 5 : 3;
 
-      for (const tc of assistantMsg.tool_calls) {
-        const callHash = `${tc.function.name}:${JSON.stringify(tc.function.arguments)}`;
-        // Evict oldest entry before inserting a new key to keep map bounded
-        if (_thrashCallCounts.size >= _THRASH_MAP_MAX && !_thrashCallCounts.has(callHash)) {
-          _thrashCallCounts.delete(_thrashCallCounts.keys().next().value!);
-        }
-        const count = (_thrashCallCounts.get(callHash) ?? 0) + 1;
-        _thrashCallCounts.set(callHash, count);
-        if (count >= threshold) {
+      // Build a signature of the tool calls in the current turn
+      const currentTurnSequence = assistantMsg.tool_calls
+        .map((tc: any) => `${tc.function.name}:${JSON.stringify(tc.function.arguments)}`)
+        .join('|');
+
+      _consecutiveTurnToolSequences.push(currentTurnSequence);
+      if (_consecutiveTurnToolSequences.length > threshold) {
+        _consecutiveTurnToolSequences.shift();
+      }
+
+      // Check if we have met the threshold of consecutive identical turns
+      if (_consecutiveTurnToolSequences.length === threshold) {
+        const first = _consecutiveTurnToolSequences[0];
+        const allIdentical = _consecutiveTurnToolSequences.every(seq => seq === first);
+        if (allIdentical) {
           return true;
         }
       }
