@@ -148,6 +148,13 @@
 - **Files:** `src/agent/mission-planner.ts`
 - **Commit:** `fix: resolve task dependencies from planner and add milestone sequential fallbacks`
 
+### 20. Thrash History Contamination & Reset Boundaries
+- **Lesson:** If the loop/thrash detection sequence queue is not cleared when a task ends or is retried, the history of previous task runs contaminates loop detection. This triggers immediate "False Positive" thrash blocks when a task is retried or a new task begins with the same initial tool (such as `list_dir` or `shell`).
+- **Fix:** Add a `reset` callback to the `AgentLoopHooks` interface that clears the consecutive tool sequence array, and invoke it at the start of the `TaskExecutor`'s `executeTask` loop.
+- **Files:** `src/agent/types.ts`, `src/agent/task-executor.ts`
+- **Commit:** `fix: reset consecutive turn thrash history at task start boundary`
+
+
 
 
 
