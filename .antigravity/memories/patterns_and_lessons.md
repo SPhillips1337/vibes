@@ -100,3 +100,30 @@
 ### 11. Single-Point Stack Detection with Cascade Propagation
 - **Pattern:** Detect tech stack once at plan time in `MissionPlanner`, store it on `Mission.tech_stack`, propagate it through `Scheduler` into each `executeTask(... techStack)` call so both the executor system prompt and the Codex semantic query are correctly prefixed — without re-scanning the filesystem per task.
 - **Why it works:** Stack detection (filesystem scan + `package.json` parse) is I/O-expensive. Running it once at planning time keeps per-task execution overhead minimal while ensuring every prompt the executor receives contains precise language/framework context (`Tech Stack: typescript, react, css`). The fallback (`?? detectTechStack(workspaceRoot)`) in `executeTask` handles standalone test invocations gracefully.
+
+### 14. JS Heap OOM in Long-Running Agent Loops (3 fixes)
+- **Lesson:** A long-running agent harness (3+ hours, YOLO mode) will OOM if the `messages[]` array, thrash detector, and tokenizer all accumulate memory without bounds.
+- **Root Cause A — Unbounded `messages[]`:** `compressMessages` only triggers when the token budget is exceeded. When a small model produces short outputs, the token count may stay under budget while the raw JS object count grows into hundreds of entries holding gigabytes of string data.
+- **Root Cause B — O(n²) thrash detector:** `shouldStopAfterTurn` rebuilt the full `callHistory[]` from the entire `messages` array on every step (O(n) scan × O(n) filter = O(n²) per step). At step 500 this is scanning 1,000+ messages per turn.
+- **Root Cause C — Repeated tokenization of static content:** `estimateTokens()` called `gpt-tokenizer`'s `encode()` on every message including the static system prompt every step, creating fresh `Uint32Array` buffers each time.
+- **Fix A:** Add `MSG_HARD_CAP = 150` in `task-executor.ts` before the `transformContext` check. Call `compressMessages(messages, true)` (force flag) to always compress when message count exceeds the cap, regardless of token budget. (`context-manager.ts` accepts new `force = false` optional param.)
+- **Fix B:** Replace the per-step rebuild in `createDefaultHooks` with a `Map<string, number>` (`_thrashCallCounts`) maintained in the closure — incremented each turn, bounded at 500 entries with insertion-order eviction. O(1) per step.
+- **Fix C:** Add a module-level `TOKEN_COUNT_CACHE = new Map<string, number>()` (max 512 entries, LRU eviction) in `context-manager.ts`. `estimateTokens()` checks the cache first; static strings like the system prompt are encoded only once per session.
+- **Files:** `src/agent/task-executor.ts`, `src/agent/context-manager.ts`
+- **Commit:** `ag/fix-tui-breaks` — `fix: prevent JS heap OOM in agent harness (3 targeted fixes)`
+
+### 15. Settings TUI Infinite Re-render Loop
+- **Lesson:** In Ink TUIs, rendering nested child views (like SettingsView) with inline event handlers or state updates inside `useEffect` can trigger a cascading infinite re-render loop ("Maximum update depth exceeded").
+- **Fix:** 
+  1. Synchronize parent props to local state using a `useEffect` with stable dependencies to avoid state lag.
+  2. Avoid shadowing keyboard handling names (e.g. using `pressedKey` instead of `key` inside `useInput` callback) to prevent collision with field configuration metadata.
+  3. Stable memoization of callbacks passed down to views (e.g. using `useCallback` on the `onClose` handler) so that re-renders of the parent do not cause unneeded child unmounts/re-mounts.
+- **Files:** `src/tui/components/settings-view.tsx`, `src/index.tsx`
+- **Commit:** `fix: eliminate settings infinite re-render — key shadowing, Select mount-trigger, stable onClose`
+
+### 16. Local Memory Activation & Init Race
+- **Lesson:** Memory service initialization must be gated by `MEMORY_ENABLED` configurations to avoid constructor spam and diagnostic warning logs when memory is disabled. When using `LOCAL_MEMORY=true`, verify the existence of local JSONL paths synchronously during service bootstrap to avoid race conditions between first read/write events.
+- **Fix:** Gate memory instantiation on config, improve remote connection diagnostic tips (pointing to offline/local fallback options), and enforce synchronous directories check prior to async JSONL reads.
+- **Files:** `src/memory/memory-service.ts`
+- **Commit:** `fix: memory service — gate on MEMORY_ENABLED, clear diagnostic for missing API key, fix local init race`
+
