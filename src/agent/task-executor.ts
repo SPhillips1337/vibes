@@ -526,6 +526,7 @@ ${memoriesSection}`;
               if (parseResult.success) {
                 validatedArgs = parseResult.data;
               } else {
+                log(`Tool arg parse failed [${toolCall.function.name}]: ${parseResult.error.message}`, 'WARN');
                 preResult = { success: false, error: `Invalid tool arguments: ${parseResult.error.message}` };
                 onEvent?.({ type: 'tool_result', tool: toolCall.function.name, result: preResult });
                 messages.push({ role: 'tool', tool_call_id: toolCall.id, content: JSON.stringify(preResult) });

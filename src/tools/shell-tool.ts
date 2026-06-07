@@ -81,13 +81,30 @@ export const shellTool: ToolDefinition = {
   description: 'Execute a shell command within the workspace directory. Network calls, key generation, sudo, global installs, and destructive operations are not permitted.',
   parameters: z.object({
     command: z.string(),
+    // Small models (qwen3.5-2b etc.) sometimes emit timeout as {} or {total:N} instead of a number.
+    // Accept any shape and coerce to a millisecond number.
     timeout: z.union([
       z.number(),
       z.object({
-        total: z.number().optional()
-      }).transform(val => val.total ?? 30000)
-    ]).default(30000),
-    failOnError: z.boolean().default(false).describe("If true, non-zero exit codes fail the tool call. Set to false if you expect non-zero exit codes (e.g. grep finding no matches)."),
+        total: z.number().optional(),
+        ms: z.number().optional(),
+        value: z.number().optional(),
+      }).transform(val => val.total ?? val.ms ?? val.value ?? 30000),
+      z.null().transform(() => 30000),
+      z.undefined().transform(() => 30000),
+    ]).default(30000).catch(30000),
+    // Small models sometimes emit failOnError as {"condition":false} instead of a boolean.
+    // Accept any shape and coerce to a boolean.
+    failOnError: z.union([
+      z.boolean(),
+      z.object({
+        condition: z.boolean().optional(),
+        value: z.boolean().optional(),
+        enabled: z.boolean().optional(),
+      }).transform(val => val.condition ?? val.value ?? val.enabled ?? false),
+      z.null().transform(() => false),
+      z.undefined().transform(() => false),
+    ]).default(false).catch(false).describe("If true, non-zero exit codes fail the tool call. Set to false if you expect non-zero exit codes (e.g. grep finding no matches)."),
   }),
   execute: async ({ command, timeout, failOnError }, context): Promise<ToolResult> => {
     // Normalize timeout: if specified in seconds (<= 1000), convert to milliseconds
