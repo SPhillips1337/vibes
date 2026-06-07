@@ -139,5 +139,15 @@
 - **Files:** `src/agent/task-executor.ts`
 - **Commit:** `fix: change thrash detection to track consecutive identical turn tool sequences`
 
+### 19. Task Dependency Mapping & Milestone Fallbacks
+- **Lesson:** Hardcoding empty `depends_on: []` arrays bypasses the scheduler's dependency checks. When prerequisite tasks fail (such as being blocked by security policies or failing validation), dependent downstream tasks continue to run out of sequence and fail, wasting compute and producing corrupted plans.
+- **Fix:**
+  1. Prompt the planner model to output string-based dependencies in `depends_on` using exact task titles.
+  2. Resolve the task titles to their respective generated UUIDs in `mission-planner.ts`.
+  3. Automatically inject sequential milestone fallbacks (making tasks in milestone $M$ depend on all tasks in milestone $M-1$ by default if no dependencies are defined) to prevent out-of-order execution.
+- **Files:** `src/agent/mission-planner.ts`
+- **Commit:** `fix: resolve task dependencies from planner and add milestone sequential fallbacks`
+
+
 
 
