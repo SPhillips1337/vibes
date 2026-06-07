@@ -168,7 +168,17 @@
 - **Files:** `src/agent/task-executor.ts`
 - **Commit:** `fix: task executor — persist failed tool execution logs to memory for intra-run learning`
 
+### 23. Source Extension Drift in Ink Components
+- **Lesson:** A React/Ink component can be syntactically valid at runtime but still fail the build if it lives in a `.jsx` file while the project’s TypeScript gate expects module declarations for the imported `.js` path.
+- **Fix:** Keep typed TUI components in `.tsx` and preserve the `.js` import specifier pattern used by Node16/ESM resolution. This keeps `tsx` runtime and `tsc` aligned without adding declaration-file shims.
+- **Files:** `src/tui/components/settings-view.tsx`, `src/index.tsx`
+- **Commit:** `fix: convert settings view to typed tsx component to satisfy build and runtime resolution`
 
+### 24. Failure-Gated Thrash Detection
+- **Lesson:** Thrash detection should not count every repeated tool sequence. Normal convergence often repeats the same read/edit/build cycle, and that should only trip when the repeated turns are actually failing end-to-end.
+- **Fix:** Reset the streak whenever a turn has any successful tool result, and only treat identical consecutive turns as thrash when every tool result in the turn failed. Use a higher threshold than 2 to avoid false positives during legitimate retries.
+- **Files:** `src/agent/task-executor.ts`
+- **Commit:** `fix: make thrash detection count only repeated failing turns`
 
 
 

@@ -28,12 +28,15 @@ function isBlockResult(v: BeforeToolCallResult | void | undefined): v is BeforeT
  */
 export function createDefaultHooks(getYoloMode: () => boolean, emit?: (evt: ExecutionEvent) => void): AgentLoopHooks {
   // Track consecutive turn tool execution sequences to detect thrashing/infinite loops.
-  // We keep a history of the tool sequences from the last N turns.
-  const _consecutiveTurnToolSequences: string[] = [];
+  // We only count turns that fail across the whole tool batch. Any successful
+  // tool result clears the streak so normal retry/progress cycles do not trip
+  // the detector.
+  const _consecutiveFailingTurnSequences: string[] = [];
+  const THRASH_THRESHOLD = 3;
 
   return {
     reset: () => {
-      _consecutiveTurnToolSequences.length = 0;
+      _consecutiveFailingTurnSequences.length = 0;
     },
     // beforeToolCall: no-op by default (validation is done inline via Zod)
     beforeToolCall: async () => undefined,
@@ -50,28 +53,31 @@ export function createDefaultHooks(getYoloMode: () => boolean, emit?: (evt: Exec
     },
 
     // shouldStopAfterTurn: consecutive turn-based thrash detection.
-    // Checks if the agent has executed the exact same sequence of tool calls
-    // (same tool names and arguments) for multiple consecutive turns.
-    shouldStopAfterTurn: async ({ message }) => {
+    // Only repeated failing turns count. Successful turns reset the streak.
+    shouldStopAfterTurn: async ({ message, toolResults }) => {
       const assistantMsg = message as any;
       if (!assistantMsg?.tool_calls?.length) return false;
-      
-      const threshold = getYoloMode() ? 5 : 3;
+
+      const allToolResultsFailed = toolResults.length > 0 && toolResults.every(result => !result.success);
+      if (!allToolResultsFailed) {
+        _consecutiveFailingTurnSequences.length = 0;
+        return false;
+      }
 
       // Build a signature of the tool calls in the current turn
       const currentTurnSequence = assistantMsg.tool_calls
         .map((tc: any) => `${tc.function.name}:${JSON.stringify(tc.function.arguments)}`)
         .join('|');
 
-      _consecutiveTurnToolSequences.push(currentTurnSequence);
-      if (_consecutiveTurnToolSequences.length > threshold) {
-        _consecutiveTurnToolSequences.shift();
+      _consecutiveFailingTurnSequences.push(currentTurnSequence);
+      if (_consecutiveFailingTurnSequences.length > THRASH_THRESHOLD) {
+        _consecutiveFailingTurnSequences.shift();
       }
 
       // Check if we have met the threshold of consecutive identical turns
-      if (_consecutiveTurnToolSequences.length === threshold) {
-        const first = _consecutiveTurnToolSequences[0];
-        const allIdentical = _consecutiveTurnToolSequences.every(seq => seq === first);
+      if (_consecutiveFailingTurnSequences.length === THRASH_THRESHOLD) {
+        const first = _consecutiveFailingTurnSequences[0];
+        const allIdentical = _consecutiveFailingTurnSequences.every(seq => seq === first);
         if (allIdentical) {
           return true;
         }

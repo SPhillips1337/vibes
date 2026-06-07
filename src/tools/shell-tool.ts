@@ -87,7 +87,7 @@ export const shellTool: ToolDefinition = {
         total: z.number().optional()
       }).transform(val => val.total ?? 30000)
     ]).default(30000),
-    failOnError: z.boolean().default(true).describe("If true, non-zero exit codes fail the tool call. Set to false if you expect non-zero exit codes (e.g. grep finding no matches)."),
+    failOnError: z.boolean().default(false).describe("If true, non-zero exit codes fail the tool call. Set to false if you expect non-zero exit codes (e.g. grep finding no matches)."),
   }),
   execute: async ({ command, timeout, failOnError }, context): Promise<ToolResult> => {
     // Normalize timeout: if specified in seconds (<= 1000), convert to milliseconds
