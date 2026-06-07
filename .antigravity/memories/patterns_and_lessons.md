@@ -133,4 +133,11 @@
 - **Files:** `src/agent/task-executor.ts`
 - **Commit:** `fix: manual tool call parsing — support standard OpenAI name/arguments structure`
 
+### 18. Consecutive Turn Tool Sequence Thrash Detection
+- **Lesson:** Tracking the total count of each unique tool+arguments hash globally across the entire session results in "False Positive" thrash triggers. Regular repetitive operations (like running `git status` or `npm run build` at different stages of a long mission) hit the global limit and prematurely abort the agent loop.
+- **Fix:** Redesign the thrash detector to analyze the sequence of tool calls per turn. Maintain a sliding queue of the last N turns' tool call sequences, and trigger thrash detection only if the exact same sequence of tool calls (with identical names and arguments) is executed for N *consecutive* turns.
+- **Files:** `src/agent/task-executor.ts`
+- **Commit:** `fix: change thrash detection to track consecutive identical turn tool sequences`
+
+
 
