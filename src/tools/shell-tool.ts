@@ -49,10 +49,17 @@ const BLOCKED_PATTERNS: RegExp[] = [
   /\bdocker\s+(run|push|pull|exec|build)\b/i,
   /\bkubectl\b/i,
   // Sensitive paths
-  /\/(etc|var|boot|root|proc|sys|dev)\b/i,
+  // Match sensitive system directories as path roots, but NOT /dev/null which is a
+  // safe standard redirect target. We match /dev only when NOT followed by /null.
+  /\/(etc|var|boot|root|proc|sys)\b/i,
+  /\/dev\/(?!null\b)/i,
   /\/\.ssh\b/i,
   /\/\.env\b/i, // Prevent reading root .env if possible (though agent often needs project .env)
 ];
+
+// Safe I/O redirect targets that must never trigger the /dev block.
+// Agents routinely emit `2>/dev/null` or `>/dev/null` to suppress output.
+const SAFE_REDIRECT_RE = /(?:^|\s)[0-9]*(?:>>?|&>)\s*\/dev\/null\b/g;
 
 function checkCommand(command: string): string | null {
   // Path traversal check
@@ -60,8 +67,12 @@ function checkCommand(command: string): string | null {
     return 'Path traversal detected (.. is not allowed in shell commands)';
   }
 
+  // Strip safe redirects (>/dev/null, 2>/dev/null, &>/dev/null) before pattern
+  // matching so they never falsely trigger the sensitive-path block.
+  const sanitized = command.replace(SAFE_REDIRECT_RE, '');
+
   for (const pattern of BLOCKED_PATTERNS) {
-    if (pattern.test(command)) {
+    if (pattern.test(sanitized)) {
       return `Command blocked by security policy (matched: ${pattern.source})`;
     }
   }
