@@ -32,6 +32,9 @@ export function createDefaultHooks(getYoloMode: () => boolean, emit?: (evt: Exec
   const _consecutiveTurnToolSequences: string[] = [];
 
   return {
+    reset: () => {
+      _consecutiveTurnToolSequences.length = 0;
+    },
     // beforeToolCall: no-op by default (validation is done inline via Zod)
     beforeToolCall: async () => undefined,
 
@@ -193,6 +196,9 @@ export class TaskExecutor {
     getYoloMode: () => boolean = () => config.YOLO_MODE,
     techStack?: string[],
   ): Promise<Task> {
+    if (this.hooks?.reset) {
+      this.hooks.reset();
+    }
     log(`Executing task: ${task.title}`, 'INFO');
 
     // Trace: initialise recorder for this run

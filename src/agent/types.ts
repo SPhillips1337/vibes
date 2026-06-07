@@ -197,6 +197,9 @@ export interface AgentLoopHooks {
    * Return `[]` to let the agent end normally.
    */
   getFollowUpMessages?: () => Promise<ExecutionEvent[]>;
+
+  /** Optional hook to reset transient loop/thrash state at task boundary. */
+  reset?: () => void;
 }
 
 /** Aggregated hook configuration for TaskExecutor. */
