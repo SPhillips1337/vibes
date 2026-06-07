@@ -1,3 +1,5 @@
+#!/usr/bin/env node
+
 import React from 'react';
 import { render, Box, Text, useInput, useApp } from 'ink';
 import { TextInput } from '@inkjs/ui';

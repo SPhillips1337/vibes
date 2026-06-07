@@ -3,13 +3,31 @@
  * Switches based on config.LOCAL_MEMORY env var / config.yaml setting.
  */
 
-import { MemoryClient } from 'mem0ai';
 import { log } from '../logger.js';
 import { config } from '../config.js';
 import { LocalMemoryService, getLocalMemoryService, type MemoryOptions } from './local-memory.js';
+import { estimateTokens, truncateToTokenBudget } from '../agent/context-manager.js';
+
+const MEMORY_CONTEXT_RATIO = 0.04;
+const MIN_MEMORY_TOKENS = 1024;
+const MAX_MEMORY_TOKENS = 6144;
+const MAX_MEMORY_ENTRY_TOKENS = 768;
+
+interface RemoteMemoryResult {
+  memory?: string;
+  data?: { memory: string } | null;
+}
+
+interface RemoteMemoryClient {
+  add(
+    messages: Array<{ role: 'user' | 'assistant'; content: string }>,
+    options: Record<string, unknown>,
+  ): Promise<unknown>;
+  search(query: string, options: Record<string, unknown>): Promise<RemoteMemoryResult[]>;
+}
 
 export class UnifiedMemoryService {
-  private client: MemoryClient | null = null;
+  private client: RemoteMemoryClient | null = null;
   private userId: string;
   private enabled: boolean = false;
   private useLocal: boolean;
@@ -36,11 +54,15 @@ export class UnifiedMemoryService {
       return;
     }
     try {
+      const { MemoryClient } = await import('mem0ai');
       this.client = new MemoryClient({ apiKey });
       this.enabled = true;
       log(`Remote memory initialized for user: ${this.userId}`, 'INFO');
     } catch (error: any) {
-      log(`Failed to init remote memory: ${error.message}`, 'ERROR');
+      const installHint = error?.code === 'ERR_MODULE_NOT_FOUND'
+        ? ' Install the optional integration with: npm install mem0ai'
+        : '';
+      log(`Failed to init remote memory: ${error.message}.${installHint}`, 'ERROR');
       this.enabled = false;
     }
   }
@@ -93,7 +115,9 @@ export class UnifiedMemoryService {
     if (!this.enabled || !this.client) return [];
     try {
       const results = await this.client.search(query, { user_id: this.userId, limit: topK });
-      return results.map((r: any) => r.content) || [];
+      return results
+        .map((result) => result.memory ?? result.data?.memory)
+        .filter((memory): memory is string => Boolean(memory));
     } catch (err: any) {
       log(`Memory retrieve error: ${err.message}`, 'ERROR');
       return [];
@@ -110,8 +134,47 @@ export class UnifiedMemoryService {
 
   formatMemoriesForPrompt(memories: string[]): string {
     if (memories.length === 0) return '';
-    const formatted = memories.map((m, i) => `${i + 1}. ${m}`).join('\n');
-    return `\nRelevant memories from previous sessions:\n${formatted}\n`;
+
+    const totalBudget = Math.min(
+      MAX_MEMORY_TOKENS,
+      Math.max(MIN_MEMORY_TOKENS, Math.floor(config.CONTEXT_WINDOW * MEMORY_CONTEXT_RATIO)),
+    );
+    const header = '\nRelevant memories from previous sessions:\n';
+    const footer = '\n';
+    const selected: string[] = [];
+
+    for (const memory of memories) {
+      const entry = truncateToTokenBudget(memory, MAX_MEMORY_ENTRY_TOKENS);
+      const numberedEntry = `${selected.length + 1}. ${entry}`;
+      const candidate = `${header}${[...selected, numberedEntry].join('\n')}${footer}`;
+
+      if (estimateTokens(candidate) <= totalBudget) {
+        selected.push(numberedEntry);
+        continue;
+      }
+
+      const current = `${header}${selected.join('\n')}${selected.length ? '\n' : ''}`;
+      const entryPrefix = `${selected.length + 1}. `;
+      const remainingTokens = totalBudget
+        - estimateTokens(current)
+        - estimateTokens(entryPrefix)
+        - estimateTokens(footer);
+      if (remainingTokens >= 64) {
+        selected.push(
+          `${entryPrefix}${truncateToTokenBudget(memory, remainingTokens)}`,
+        );
+      }
+      break;
+    }
+
+    if (selected.length === 0) return '';
+
+    const formatted = `${header}${selected.join('\n')}${footer}`;
+    log(
+      `Memory injection: ${selected.length}/${memories.length} entries, ~${estimateTokens(formatted)}/${totalBudget} tokens`,
+      'DEBUG',
+    );
+    return formatted;
   }
 
   async addConversationTurn(role: 'user' | 'assistant', content: string): Promise<void> {

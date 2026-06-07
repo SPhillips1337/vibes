@@ -192,5 +192,15 @@
 - **Files:** `src/ollama-client.ts`, `src/tui/hooks/use-mission.ts`, `src/index.tsx`
 - **Commit:** `fix: classify speculative decoding provider errors`
 
+### 27. Token-Budgeted Memory Injection
+- **Lesson:** Limiting memory retrieval by entry count does not bound prompt size because a single memory can contain thousands of tokens. Executor compaction cannot solve this reliably when memories are embedded in the preserved system prompt.
+- **Fix:** Budget the complete memory section before prompt construction using 4% of `CONTEXT_WINDOW`, clamped to 1,024-6,144 tokens; cap each entry at 768 tokens; stop adding entries when the total budget is exhausted; log actual injection usage; and exclude zero-score local retrieval results.
+- **Files:** `src/memory/memory-service.ts`, `src/memory/local-memory.ts`
+- **Commit:** `fix: bound memory prompt injection by token budget`
 
+### 28. npm CLI Packaging Boundaries
+- **Lesson:** A globally installed workspace-aware CLI must separate its package installation root from the user's launch directory. Git-based self-update commands using `process.cwd()` can mutate the user's project, and broad package file globs can publish stale artifacts containing local paths or personal metadata.
+- **Fix:** Publish `vibes-tui` with a dedicated `vibes` bootstrap binary, an explicit compiled-JavaScript allowlist, source-checkout-only Git updates rooted from `import.meta.url`, and a `prepack` build. Keep optional remote-memory SDKs out of the default runtime dependency graph using an optional peer plus dynamic import; local memory remains dependency-free.
+- **Files:** `package.json`, `src/vibes-cli.ts`, `src/tui/hooks/use-update-check.ts`, `src/memory/memory-service.ts`, `README.md`
+- **Commit:** `feat: package Vibes as the vibes-tui npm CLI`
 
