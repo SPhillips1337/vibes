@@ -39,8 +39,13 @@ export function createDefaultHooks(getYoloMode: () => boolean, emit?: (evt: Exec
     beforeToolCall: async () => undefined,
 
     // afterToolCall: record failed tool usage to memory
-    afterToolCall: async ({ result, isError }) => {
+    afterToolCall: async ({ toolCall, args, result, isError }) => {
       if (!isError) return undefined;
+      const memory = getMemoryService();
+      if (memory.isEnabled()) {
+        const toolName = (toolCall as any).function?.name || String(toolCall);
+        await memory.addToolUsage(toolName, args as any, result).catch(() => {});
+      }
       return undefined;
     },
 
