@@ -629,24 +629,36 @@ function parseMarkdownToolCalls(content: string): any[] | null {
     if (Array.isArray(parsed)) {
       const calls: any[] = [];
       for (const item of parsed) {
-        if (item && typeof item === 'object' && (item.tool || item.tool_name)) {
+        const hasToolIdentifier = item && typeof item === 'object' && (
+          item.tool || 
+          item.tool_name || 
+          (item.name && (item.arguments !== undefined || item.args !== undefined))
+        );
+        if (hasToolIdentifier) {
           calls.push({
             id: `manual_${Math.random().toString(36).substr(2, 9)}`,
             type: 'function',
             function: {
-              name: item.tool || item.tool_name,
+              name: item.tool || item.tool_name || item.name,
               arguments: typeof item.args === 'string' ? item.args : JSON.stringify(item.args || item.arguments || {})
             }
           });
         }
       }
       return calls.length > 0 ? calls : null;
-    } else if (parsed && typeof parsed === 'object' && (parsed.tool || parsed.tool_name)) {
+    } else if (
+      parsed && 
+      typeof parsed === 'object' && (
+        parsed.tool || 
+        parsed.tool_name || 
+        (parsed.name && (parsed.arguments !== undefined || parsed.args !== undefined))
+      )
+    ) {
       return [{
         id: `manual_${Math.random().toString(36).substr(2, 9)}`,
         type: 'function',
         function: {
-          name: parsed.tool || parsed.tool_name,
+          name: parsed.tool || parsed.tool_name || parsed.name,
           arguments: typeof parsed.args === 'string' ? parsed.args : JSON.stringify(parsed.args || parsed.arguments || {})
         }
       }];
