@@ -4,6 +4,13 @@ import { config } from '../config.js';
 import { log } from '../logger.js';
 import { InterventionManager } from './intervention-manager.js';
 import { getMemoryService } from '../memory/index.js';
+import { runStructuralAudit } from './structural-audit.js';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
+import { existsSync, readFileSync } from 'fs';
+import { join } from 'path';
+
+const execFileAsync = promisify(execFile);
 
 export type InterventionResolution = {
   action: 'retry' | 'skip' | 'fail' | 'reply';
@@ -130,8 +137,11 @@ export class Scheduler {
     this.onEvent?.({ type: 'task_started', taskId: task.id, title: task.title });
 
     try {
-      const missionContext = `Mission: ${this.mission.title}\nDescription: ${this.mission.description}`;
-      const updatedTask = await this.executor.executeTask(task, missionContext, this.mission.workspace_root, this.onEvent, this.getYoloMode);
+      const stackLine = this.mission.tech_stack && this.mission.tech_stack.length > 0
+        ? `\nTech Stack: ${this.mission.tech_stack.join(', ')}`
+        : '';
+      const missionContext = `Mission: ${this.mission.title}\nDescription: ${this.mission.description}${stackLine}`;
+      const updatedTask = await this.executor.executeTask(task, missionContext, this.mission.workspace_root, this.onEvent, this.getYoloMode, this.mission.tech_stack);
 
       this.updateTaskInMission(updatedTask);
 
@@ -144,6 +154,12 @@ export class Scheduler {
           
           if (review.approved) {
             log(`Task approved by reviewer: ${updatedTask.title}`, 'INFO');
+
+            // Verification phase — catches orphaned CSS, broken imports, syntax errors, and build failures
+            if (!await this.verifyTask(task, updatedTask)) {
+              return;
+            }
+
             this.completedTasks.add(task.id);
             this.onEvent?.({ type: 'task_completed', taskId: task.id, title: task.title });
           } else {
@@ -171,6 +187,12 @@ export class Scheduler {
           if (config.ENABLE_REVIEWER) {
             log(`Skipping review for non-code task (type=${updatedTask.type}): ${updatedTask.title}`, 'INFO');
           }
+
+          // Verification phase (for non-reviewer path)
+          if (!await this.verifyTask(task, updatedTask)) {
+            return;
+          }
+
           this.completedTasks.add(task.id);
           this.onEvent?.({ type: 'task_completed', taskId: task.id, title: task.title });
         }
@@ -279,6 +301,42 @@ export class Scheduler {
     this.onEvent?.({ type: 'steps_updated', taskId: task.id, extraSteps: task.extraSteps });
   }
 
+  private async verifyTask(task: Task, updatedTask: Task): Promise<boolean> {
+    let auditIssuesMessage = '';
+    let auditIssuesList: any[] = [];
+
+    if (updatedTask.files.length > 0) {
+      if (config.ENABLE_STRUCTURAL_AUDIT) {
+        const auditIssues = runStructuralAudit(this.mission.workspace_root, updatedTask.files);
+        if (auditIssues.length > 0) {
+          auditIssuesList = auditIssues;
+          auditIssuesMessage = `Structural audit found issues:\n${auditIssues.map(i => `- [${i.type}] ${i.file}: ${i.message}`).join('\n')}\n\n`;
+        }
+      }
+
+      const buildErrors = await runBuildCheck(this.mission.workspace_root);
+      if (buildErrors.length > 0) {
+        auditIssuesMessage += `Build compilation failed with errors:\n${buildErrors.map(e => `- ${e}`).join('\n')}\n\n`;
+      }
+    }
+
+    if (auditIssuesMessage) {
+      log(`Verification failed for task: ${updatedTask.title}`, 'WARN');
+      updatedTask.auditIssues = auditIssuesList.length > 0 ? auditIssuesList : undefined;
+      updatedTask.status = 'todo';
+      updatedTask.error = undefined;
+      updatedTask.output = undefined;
+      updatedTask.userGuidance = `${auditIssuesMessage}Fix all structural and build compilation issues before completing the task.`;
+      updatedTask.extraSteps = (updatedTask.extraSteps || 0) + 10;
+      this.completedTasks.delete(task.id);
+      this.taskMap.set(task.id, updatedTask);
+      this.runningTasks.delete(task.id);
+      return false;
+    }
+
+    return true;
+  }
+
   private markDependentsFailed(failedTaskId: string) {
     for (const [id, task] of this.taskMap) {
       if (task.depends_on.includes(failedTaskId) && task.status === 'todo') {
@@ -307,5 +365,33 @@ export class Scheduler {
       milestone.tasks.push(newTask);
       this.taskMap.set(newTask.id, newTask);
     }
+  }
+}
+
+// Async build check — uses execFileAsync instead of execSync so the TypeScript
+// compile does not block the Node.js event loop (and freeze the TUI) for its
+// full duration, which can be several seconds on a large project.
+async function runBuildCheck(workspaceRoot: string): Promise<string[]> {
+  try {
+    const pkgPath = join(workspaceRoot, 'package.json');
+    if (!existsSync(pkgPath)) return [];
+
+    const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'));
+    if (!pkg.scripts || !pkg.scripts.build) return [];
+
+    log('Running workspace build verification check...', 'INFO');
+    await execFileAsync('npm', ['run', 'build'], { cwd: workspaceRoot });
+    return [];
+  } catch (error: any) {
+    const stdout = error.stdout ? String(error.stdout) : '';
+    const stderr = error.stderr ? String(error.stderr) : '';
+    const output = `${stdout}\n${stderr}`;
+
+    const errorLines = output
+      .split('\n')
+      .map(line => line.trim())
+      .filter(line => line.includes('error TS') || line.includes('Error:') || line.includes('Failed to compile') || line.includes('ValidationError'));
+
+    return errorLines.length > 0 ? errorLines.slice(0, 8) : [error.message || 'Build compilation check failed'];
   }
 }

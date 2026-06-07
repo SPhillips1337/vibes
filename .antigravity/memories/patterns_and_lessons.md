@@ -30,6 +30,18 @@
 - **Pattern:** Position global system shortcuts (with modifiers like `Alt`) ABOVE the text-input suppression guards in the input handler.
 - **Why it works:** Allows the user to perform system actions (like Updating or Undoing) even while the cursor is focused in an active `TextInput` field, without characters leaking into the input.
 
+### 8. Markdown Tool Fallback Parser
+- **Pattern:** Add string-parsing fallbacks to catch manually written JSON code blocks when API-level tool calling fails or is unsupported.
+- **Why it works:** This enables agentic execution on smaller or buggy models that cannot render tool-calling schemas natively (like Gemma 12B or Phi-4-mini).
+
+### 9. Automated Self-Healing Verification Loops
+- **Pattern:** Wrap task completion in combined structural and build compilation check loops.
+- **Why it works:** If checks fail, passing compiler/linter errors back to the executor as task guidance lets them immediately correct syntax, import, or build failures before code review.
+
+### 10. Codex Snippet Context Compression
+- **Pattern:** Intelligently strip import statements, comments, and long duplicate snippets from retrieved code references.
+- **Why it works:** Decreases token usage by 50%+, protecting the smaller context windows of 3B-9B models from being flooded by irrelevant imports or comments.
+
 ## 🔴 Failure Lessons (Drag)
 
 ### 1. The "Ghost Retry" Bug
@@ -56,3 +68,139 @@
 ### 6. PowerShell Native Command Error gotcha
 - **Lesson:** When `$ErrorActionPreference = 'Stop'` is set in a PowerShell script, any output to the standard error stream (stderr) by native commands (such as `git` or `npm`) is intercepted and treated as a terminating `NativeCommandError`, crashing the script even if the command completed successfully.
 - **Fix:** Set `$ErrorActionPreference = 'Continue'` when invoking external native commands, avoid redirecting stderr (`2>&1`) to standard output in capturing variables, and check `$LASTEXITCODE` to explicitly manage execution failures.
+
+### 7. Raw SGR Mouse Leakage
+- **Lesson:** Enabling raw SGR mouse reporting (`\x1b[?1000h\x1b[?1006h`) in Ink TUIs translates mouse clicks and scroll wheel events into ANSI escape sequences sent to stdin. Because standard Ink text inputs listen to all stdin data, these sequences leak and append garbage characters (like `[<0;...`) into text fields.
+- **Fix:** Avoid SGR mouse mode unless stdin can be cleanly wrapped to intercept and strip mouse escape sequences before they reach Ink's key listener.
+
+### 8. Incremental Rendering Screen Overlap
+- **Lesson:** Ink's `incrementalRendering: true` uses line-level diffing to minimize redraw flickering. However, if background processes or remote LLM logs write directly to stdout/stderr, these lines are never cleared by Ink and permanently overlap the TUI layout.
+- **Fix:** Use full terminal screen redraws (default rendering) to clear background print noise, and solve rendering flickering at the state layer (e.g. by buffering/throttling state flushes).
+
+### 9. Navigation Key Hijacking
+- **Lesson:** Binding global view-switching commands to generic keys like `Home` and `End` intercepts them globally, breaking text cursor navigation in inputs and log scroll handlers in lists.
+- **Fix:** Guard global navigation shortcuts so they are disabled if a text input is active or the current view uses those keys locally for scrolling.
+
+### 10. Concurrent Session File Writes
+- **Lesson:** Writing session data at high frequencies (e.g. every 100ms on event buffers) triggers concurrent asynchronous filesystem operations on the same file path. This leads to write races, file truncation, and JSON corruption, causing syntax errors when other routines try to read the files.
+- **Fix:** Serialize write operations using a promise queue per session, and write files atomically by saving to a temporary path first and then renaming it.
+
+### 11. Silent Corruption Mitigation
+- **Lesson:** Pre-existing corrupted JSON files in data folders trigger repeating read failures and log stream pollution on every state update loop.
+- **Fix:** When a file fails to parse, log it once and rename it (e.g. `.json` to `.json.corrupted`) to exclude it from future directory searches while keeping the raw data available for recovery.
+
+### 12. Codex RAG Backoff on Connection Failure
+- **Lesson:** When a downstream database (like Neo4j) is offline, executing semantic/vector search queries loops through all candidates and retries, flooding TUI execution traces with standard connection failure warnings.
+- **Fix:** Detect network/connection errors (`ECONNREFUSED` / `Connection refused`) on the first query attempt, mark the service as offline, and back off (returning empty results immediately) for 5 minutes.
+
+### 13. Stack-Aware Runtime Quality Audits
+- **Lesson:** Standard compilers and type checkers do not catch silent framework-specific runtime styling, loading, or semantic bugs across different tech stacks (e.g., React `createContext` inside render functions, out-of-scope hook reference, JS imports in CSS files; Python mutable default arguments in function definitions).
+- **Fix:** Implement dynamic workspace tech-stack identification in [tech-stack.ts](file:///home/stephen/Vibes/src/agent/tech-stack.ts) by analyzing dependencies and files, then use [runStructuralAudit](file:///home/stephen/Vibes/src/agent/structural-audit.ts) to execute stack-specific auditing modules (skipping irrelevant checks) and prepend stack tags to Codex semantic searches in [task-executor.ts](file:///home/stephen/Vibes/src/agent/task-executor.ts).
+
+### 11. Single-Point Stack Detection with Cascade Propagation
+- **Pattern:** Detect tech stack once at plan time in `MissionPlanner`, store it on `Mission.tech_stack`, propagate it through `Scheduler` into each `executeTask(... techStack)` call so both the executor system prompt and the Codex semantic query are correctly prefixed — without re-scanning the filesystem per task.
+- **Why it works:** Stack detection (filesystem scan + `package.json` parse) is I/O-expensive. Running it once at planning time keeps per-task execution overhead minimal while ensuring every prompt the executor receives contains precise language/framework context (`Tech Stack: typescript, react, css`). The fallback (`?? detectTechStack(workspaceRoot)`) in `executeTask` handles standalone test invocations gracefully.
+
+### 14. JS Heap OOM in Long-Running Agent Loops (3 fixes)
+- **Lesson:** A long-running agent harness (3+ hours, YOLO mode) will OOM if the `messages[]` array, thrash detector, and tokenizer all accumulate memory without bounds.
+- **Root Cause A — Unbounded `messages[]`:** `compressMessages` only triggers when the token budget is exceeded. When a small model produces short outputs, the token count may stay under budget while the raw JS object count grows into hundreds of entries holding gigabytes of string data.
+- **Root Cause B — O(n²) thrash detector:** `shouldStopAfterTurn` rebuilt the full `callHistory[]` from the entire `messages` array on every step (O(n) scan × O(n) filter = O(n²) per step). At step 500 this is scanning 1,000+ messages per turn.
+- **Root Cause C — Repeated tokenization of static content:** `estimateTokens()` called `gpt-tokenizer`'s `encode()` on every message including the static system prompt every step, creating fresh `Uint32Array` buffers each time.
+- **Fix A:** Add `MSG_HARD_CAP = 150` in `task-executor.ts` before the `transformContext` check. Call `compressMessages(messages, true)` (force flag) to always compress when message count exceeds the cap, regardless of token budget. (`context-manager.ts` accepts new `force = false` optional param.)
+- **Fix B:** Replace the per-step rebuild in `createDefaultHooks` with a `Map<string, number>` (`_thrashCallCounts`) maintained in the closure — incremented each turn, bounded at 500 entries with insertion-order eviction. O(1) per step.
+- **Fix C:** Add a module-level `TOKEN_COUNT_CACHE = new Map<string, number>()` (max 512 entries, LRU eviction) in `context-manager.ts`. `estimateTokens()` checks the cache first; static strings like the system prompt are encoded only once per session.
+- **Files:** `src/agent/task-executor.ts`, `src/agent/context-manager.ts`
+- **Commit:** `ag/fix-tui-breaks` — `fix: prevent JS heap OOM in agent harness (3 targeted fixes)`
+
+### 15. Settings TUI Infinite Re-render Loop
+- **Lesson:** In Ink TUIs, rendering nested child views (like SettingsView) with inline event handlers or state updates inside `useEffect` can trigger a cascading infinite re-render loop ("Maximum update depth exceeded").
+- **Fix:** 
+  1. Synchronize parent props to local state using a `useEffect` with stable dependencies to avoid state lag.
+  2. Avoid shadowing keyboard handling names (e.g. using `pressedKey` instead of `key` inside `useInput` callback) to prevent collision with field configuration metadata.
+  3. Stable memoization of callbacks passed down to views (e.g. using `useCallback` on the `onClose` handler) so that re-renders of the parent do not cause unneeded child unmounts/re-mounts.
+- **Files:** `src/tui/components/settings-view.tsx`, `src/index.tsx`
+- **Commit:** `fix: eliminate settings infinite re-render — key shadowing, Select mount-trigger, stable onClose`
+
+### 16. Local Memory Activation & Init Race
+- **Lesson:** Memory service initialization must be gated by `MEMORY_ENABLED` configurations to avoid constructor spam and diagnostic warning logs when memory is disabled. When using `LOCAL_MEMORY=true`, verify the existence of local JSONL paths synchronously during service bootstrap to avoid race conditions between first read/write events.
+- **Fix:** Gate memory instantiation on config, improve remote connection diagnostic tips (pointing to offline/local fallback options), and enforce synchronous directories check prior to async JSONL reads.
+- **Files:** `src/memory/memory-service.ts`
+- **Commit:** `fix: memory service — gate on MEMORY_ENABLED, clear diagnostic for missing API key, fix local init race`
+
+### 17. OpenAI-Style Tool Call Format Fallback Parser
+- **Lesson:** Standard fallback markdown JSON tool parsers that only support custom keys like `tool` and `args` will miss tool calls from models that output standard OpenAI function calling schemas (`name` and `arguments`). This causes tasks to be marked complete without executing their underlying operations, leading to downstream errors.
+- **Fix:** Extend manual tool call parsing to recognize JSON objects that possess `name` and (`arguments` or `args`) fields, ensuring compatibility with standard OpenAI formats.
+- **Files:** `src/agent/task-executor.ts`
+- **Commit:** `fix: manual tool call parsing — support standard OpenAI name/arguments structure`
+
+### 18. Consecutive Turn Tool Sequence Thrash Detection
+- **Lesson:** Tracking the total count of each unique tool+arguments hash globally across the entire session results in "False Positive" thrash triggers. Regular repetitive operations (like running `git status` or `npm run build` at different stages of a long mission) hit the global limit and prematurely abort the agent loop.
+- **Fix:** Redesign the thrash detector to analyze the sequence of tool calls per turn. Maintain a sliding queue of the last N turns' tool call sequences, and trigger thrash detection only if the exact same sequence of tool calls (with identical names and arguments) is executed for N *consecutive* turns.
+- **Files:** `src/agent/task-executor.ts`
+- **Commit:** `fix: change thrash detection to track consecutive identical turn tool sequences`
+
+### 19. Task Dependency Mapping & Milestone Fallbacks
+- **Lesson:** Hardcoding empty `depends_on: []` arrays bypasses the scheduler's dependency checks. When prerequisite tasks fail (such as being blocked by security policies or failing validation), dependent downstream tasks continue to run out of sequence and fail, wasting compute and producing corrupted plans.
+- **Fix:**
+  1. Prompt the planner model to output string-based dependencies in `depends_on` using exact task titles.
+  2. Resolve the task titles to their respective generated UUIDs in `mission-planner.ts`.
+  3. Automatically inject sequential milestone fallbacks (making tasks in milestone $M$ depend on all tasks in milestone $M-1$ by default if no dependencies are defined) to prevent out-of-order execution.
+- **Files:** `src/agent/mission-planner.ts`
+- **Commit:** `fix: resolve task dependencies from planner and add milestone sequential fallbacks`
+
+### 20. Thrash History Contamination & Reset Boundaries
+- **Lesson:** If the loop/thrash detection sequence queue is not cleared when a task ends or is retried, the history of previous task runs contaminates loop detection. This triggers immediate "False Positive" thrash blocks when a task is retried or a new task begins with the same initial tool (such as `list_dir` or `shell`).
+- **Fix:** Add a `reset` callback to the `AgentLoopHooks` interface that clears the consecutive tool sequence array, and invoke it at the start of the `TaskExecutor`'s `executeTask` loop.
+- **Files:** `src/agent/types.ts`, `src/agent/task-executor.ts`
+- **Commit:** `fix: reset consecutive turn thrash history at task start boundary`
+
+### 21. Resilient Tool Argument Parsing & Auto-Normalization
+- **Lesson:** LLMs frequently produce malformed tool arguments based on library defaults or other models (e.g. passing `timeout` as an object `{"total": 10}` or in seconds instead of milliseconds). When Zod validation fails, the model gets stuck in an execution failure loop, triggering thrash detection.
+- **Fix:** 
+  1. Define tool schemas defensively using `z.union` to support both native formats and common malformed object variants (transforming objects back to primitive types).
+  2. Implement auto-normalization on parsed values inside the tool executor (e.g. converting seconds $\le 1000$ to milliseconds) to ensure expected execution runtime behavior.
+- **Files:** `src/tools/shell-tool.ts`
+- **Commit:** `fix: shell tool — support object-based timeout and seconds-to-milliseconds auto-normalization`
+
+### 22. Intra-Run Tool Failure Memory Persistence
+- **Lesson:** If the agent has no memory of its tool call failures across retries (because the message history resets completely on task retry), it is prone to repeating the exact same invalid commands or actions, leading to loop detection blocks.
+- **Fix:** Implement the `afterToolCall` hook in `TaskExecutor` to automatically save failed tool usage logs (including the tool name, arguments, and failure result) to the memory service. This serves as "experience replay," which is retrieved at the start of any subsequent attempts of the task.
+- **Files:** `src/agent/task-executor.ts`
+- **Commit:** `fix: task executor — persist failed tool execution logs to memory for intra-run learning`
+
+### 23. Source Extension Drift in Ink Components
+- **Lesson:** A React/Ink component can be syntactically valid at runtime but still fail the build if it lives in a `.jsx` file while the project’s TypeScript gate expects module declarations for the imported `.js` path.
+- **Fix:** Keep typed TUI components in `.tsx` and preserve the `.js` import specifier pattern used by Node16/ESM resolution. This keeps `tsx` runtime and `tsc` aligned without adding declaration-file shims.
+- **Files:** `src/tui/components/settings-view.tsx`, `src/index.tsx`
+- **Commit:** `fix: convert settings view to typed tsx component to satisfy build and runtime resolution`
+
+### 24. Failure-Gated Thrash Detection
+- **Lesson:** Thrash detection should not count every repeated tool sequence. Normal convergence often repeats the same read/edit/build cycle, and that should only trip when the repeated turns are actually failing end-to-end.
+- **Fix:** Reset the streak whenever a turn has any successful tool result, and only treat identical consecutive turns as thrash when every tool result in the turn failed. Use a higher threshold than 2 to avoid false positives during legitimate retries.
+- **Files:** `src/agent/task-executor.ts`
+- **Commit:** `fix: make thrash detection count only repeated failing turns`
+
+### 25. Benign Verification Whitelist
+- **Lesson:** Small-model harnesses need a carve-out for validation-heavy convergence. Repeated read-only inspection turns and repeated build/test verification are normal progress signals, not loop signals.
+- **Fix:** Treat turns composed entirely of read-only tools (`list_dir`, `file_read`, `read_lines`, `glob`, `file_outline`, `search_symbols`) or explicit verification shell commands (`npm run build`, `npm test`, `tsc`, `vitest`, `jest`, `eslint`, etc.) as benign and do not advance the thrash streak.
+- **Files:** `src/agent/task-executor.ts`
+- **Commit:** `fix: whitelist benign verification turns in thrash detection`
+
+### 26. Provider Capability Error Classification
+- **Lesson:** OpenAI-compatible servers can reject requests because of engine/load configuration, even when the request payload and model output are valid. Presenting these errors as malformed model output sends users toward ineffective prompt changes.
+- **Fix:** Normalize known provider capability errors at the client boundary and show provider-specific remediation in the TUI. LM Studio's native draft-model speculative-decoding capability gap requires disabling the loaded model's Draft Model / Speculative Decoding setting or selecting a compatible engine.
+- **Files:** `src/ollama-client.ts`, `src/tui/hooks/use-mission.ts`, `src/index.tsx`
+- **Commit:** `fix: classify speculative decoding provider errors`
+
+### 27. Token-Budgeted Memory Injection
+- **Lesson:** Limiting memory retrieval by entry count does not bound prompt size because a single memory can contain thousands of tokens. Executor compaction cannot solve this reliably when memories are embedded in the preserved system prompt.
+- **Fix:** Budget the complete memory section before prompt construction using 4% of `CONTEXT_WINDOW`, clamped to 1,024-6,144 tokens; cap each entry at 768 tokens; stop adding entries when the total budget is exhausted; log actual injection usage; and exclude zero-score local retrieval results.
+- **Files:** `src/memory/memory-service.ts`, `src/memory/local-memory.ts`
+- **Commit:** `fix: bound memory prompt injection by token budget`
+
+### 28. npm CLI Packaging Boundaries
+- **Lesson:** A globally installed workspace-aware CLI must separate its package installation root from the user's launch directory. Git-based self-update commands using `process.cwd()` can mutate the user's project, and broad package file globs can publish stale artifacts containing local paths or personal metadata.
+- **Fix:** Publish `vibes-tui` with a dedicated `vibes` bootstrap binary, an explicit compiled-JavaScript allowlist, source-checkout-only Git updates rooted from `import.meta.url`, and a `prepack` build. Keep optional remote-memory SDKs out of the default runtime dependency graph using an optional peer plus dynamic import; local memory remains dependency-free.
+- **Files:** `package.json`, `src/vibes-cli.ts`, `src/tui/hooks/use-update-check.ts`, `src/memory/memory-service.ts`, `README.md`
+- **Commit:** `feat: package Vibes as the vibes-tui npm CLI`
+

@@ -1,3 +1,5 @@
+#!/usr/bin/env node
+
 import React from 'react';
 import { render, Box, Text, useInput, useApp } from 'ink';
 import { TextInput } from '@inkjs/ui';
@@ -33,6 +35,7 @@ const App = () => {
   } = useUpdateCheck();
 
   const { settings, availableModels, saveSettings } = useSettings();
+  const closeSettings = React.useCallback(() => setView('dashboard'), []);
 
   const [workspace, setWorkspace] = React.useState(process.env.VIBES_LAUNCH_DIR || process.cwd());
   const [view, setView] = React.useState<'dashboard' | 'mission' | 'task' | 'trace' | 'settings' | 'history' | 'log'>('dashboard');
@@ -87,10 +90,18 @@ const App = () => {
     }
 
     // Suppress other global shortcuts while typing in a text field
-    const isTyping = isIdle && view === 'dashboard'; 
+    const isTyping = (isIdle && view === 'dashboard') || view === 'settings'; 
     if (isTyping) {
-      if (key.tab) setFocusIndex(prev => (prev === 0 ? 1 : 0));
+      if (key.tab && !key.shift) setFocusIndex(prev => (prev === 0 ? 1 : 0));
+      if (key.tab && key.shift) setFocusIndex(prev => (prev === 1 ? 0 : 1));
       return; 
+    }
+
+    // Home/End key navigation (only when not typing in text fields or scrolling logs)
+    const canUseHomeEndForNav = !isIdle && view !== 'log' && view !== 'trace';
+    if (canUseHomeEndForNav) {
+      if (key.home) { setView('dashboard'); return; }
+      if (key.end) { setView('log'); return; }
     }
 
     if (view === 'history') {
@@ -110,6 +121,8 @@ const App = () => {
       return;
     }
   });
+
+
 
   const handleSubmit = (val: string) => {
     if (val.trim()) {
@@ -165,7 +178,11 @@ const App = () => {
             <Text color="red" bold>Error Detected:</Text>
             <Text color="red">{error.length > 500 ? error.slice(0, 500) + '...' : error}</Text>
             <Box marginTop={1}>
-              <Text color="gray" dimColor>The model may have produced malformed output. Try a more specific description.</Text>
+              <Text color="gray" dimColor>
+                {error.toLowerCase().includes('speculative decoding')
+                  ? 'This is a model-server capability mismatch, not malformed model output.'
+                  : 'The model may have produced malformed output. Try a more specific description.'}
+              </Text>
             </Box>
           </Box>
         )}
@@ -193,7 +210,7 @@ const App = () => {
             settings={settings}
             availableModels={availableModels}
             onSave={saveSettings}
-            onClose={() => setView('dashboard')}
+            onClose={closeSettings}
           />
         )}
 

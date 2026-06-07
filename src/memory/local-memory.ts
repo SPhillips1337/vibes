@@ -119,7 +119,10 @@ export class LocalMemoryService {
     });
 
     scored.sort((a, b) => b.score - a.score);
-    return scored.slice(0, topK).map((s) => s.entry.content);
+    return scored
+      .filter((item) => item.score > 0)
+      .slice(0, topK)
+      .map((item) => item.entry.content);
   }
 
   isEnabled(): boolean {

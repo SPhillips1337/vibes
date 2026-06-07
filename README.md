@@ -98,6 +98,28 @@ This script will:
 
 ### Running Vibes
 
+#### npm
+
+Install the published CLI globally:
+
+```bash
+npm install --global vibes-tui
+vibes
+```
+
+Or run it without a global install:
+
+```bash
+npx vibes-tui
+```
+
+Local JSONL memory works without additional packages. To use the optional
+remote Mem0 integration, install it alongside Vibes:
+
+```bash
+npm install --global vibes-tui mem0ai
+```
+
 #### ⚡ Using the Global Command
 If you used the quick installer, you can launch Vibes from **any directory** on your system:
 
@@ -158,3 +180,5 @@ This project is licensed under the [MIT License](LICENSE.md).
 ---
 
 *Built with ❤️ for the Gemma community.*
+
+Test Mission: Create a loading skeleton component with shimmer animation, variant shapes, and Suspense integration

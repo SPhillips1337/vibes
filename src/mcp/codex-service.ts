@@ -6,8 +6,8 @@ import { log } from '../logger.js';
 
 const execAsync = promisify(execFile);
 
-const CODEX_SCRIPT = process.env.CODEX_SCRIPT_PATH || '/home/stephen/Documents/www/LLM-Codex-Reference-Vault/codex_search.py';
-const PYTHON = process.env.CODEX_PYTHON_PATH || '/home/stephen/Documents/www/LLM-Codex-Reference-Vault/venv/bin/python';
+const CODEX_SCRIPT = config.CODEX_SCRIPT_PATH || process.env.CODEX_SCRIPT_PATH || '';
+const PYTHON = config.CODEX_PYTHON_PATH || process.env.CODEX_PYTHON_PATH || '';
 
 export interface CodexResult {
   document: string;
@@ -23,13 +23,15 @@ export interface CodexSearchResponse {
 
 class CodexService {
   private inited = false;
+  private offline = false;
+  private lastOfflineCheck = 0;
 
   init(): void {
-    if (!existsSync(CODEX_SCRIPT)) {
-      log(`Codex script not found: ${CODEX_SCRIPT}. Set CODEX_SCRIPT_PATH env var or set CODEX_ENABLED=false.`, 'WARN');
+    if (!CODEX_SCRIPT || !existsSync(CODEX_SCRIPT)) {
+      log(`Codex script not found: "${CODEX_SCRIPT || '(empty)'}". Set CODEX_SCRIPT_PATH in .env or .vibes/config.json, or set CODEX_ENABLED=false.`, 'WARN');
     }
-    if (!existsSync(PYTHON)) {
-      log(`Codex python not found: ${PYTHON}. Set CODEX_PYTHON_PATH env var or set CODEX_ENABLED=false.`, 'WARN');
+    if (!PYTHON || !existsSync(PYTHON)) {
+      log(`Codex python not found: "${PYTHON || '(empty)'}". Set CODEX_PYTHON_PATH in .env or .vibes/config.json, or set CODEX_ENABLED=false.`, 'WARN');
     }
     this.inited = true;
     log('Codex service initialized (Neo4j semantic search RAG)', 'INFO');
@@ -40,6 +42,10 @@ class CodexService {
   }
 
   private async runCodexSearch(query: string, topK: number, embeddingHostOverride?: string): Promise<CodexSearchResponse> {
+    if (!PYTHON || !CODEX_SCRIPT) {
+      log('Codex search skipped: PYTHON or CODEX_SCRIPT path is empty.', 'WARN');
+      return { results: [], count: 0 };
+    }
     const { stdout, stderr } = await execAsync(PYTHON, [CODEX_SCRIPT, query, String(topK)], {
       timeout: 30000,
       env: {
@@ -60,6 +66,15 @@ class CodexService {
   }
 
   async search(query: string, topK?: number): Promise<CodexSearchResponse> {
+    if (!this.isEnabled()) return { results: [], count: 0 };
+
+    if (this.offline) {
+      if (Date.now() - this.lastOfflineCheck < 300000) { // 5 minutes backoff
+        return { results: [], count: 0 };
+      }
+      this.offline = false;
+    }
+
     const k = topK ?? config.CODEX_TOP_K;
     const hostCandidates = [
       undefined,
@@ -77,7 +92,19 @@ class CodexService {
           const stderr = err?.stderr ? String(err.stderr) : '';
           const stdout = err?.stdout ? String(err.stdout) : '';
           const message = String(err?.message ?? err);
-          const transient = /timeout|timed out|ECONNRESET|ETIMEDOUT|EAI_AGAIN|503|502|429|temporarily|Connection refused/i.test(
+
+          const isConnectionError = /Connection refused|Couldn't connect|neo4j|ECONNREFUSED/i.test(
+            `${message}\n${stderr}\n${stdout}`
+          );
+
+          if (isConnectionError) {
+            log(`Codex search failed due to Neo4j/network connection error. Temporarily disabling Codex search for 5 minutes.`, 'WARN');
+            this.offline = true;
+            this.lastOfflineCheck = Date.now();
+            return { results: [], count: 0 };
+          }
+
+          const transient = /timeout|timed out|ECONNRESET|ETIMEDOUT|EAI_AGAIN|503|502|429|temporarily/i.test(
             `${message}\n${stderr}\n${stdout}`,
           );
           log(
@@ -112,20 +139,36 @@ class CodexService {
     for (let i = 0; i < response.results.length; i++) {
       const r = response.results[i];
       result += `\n--- Reference ${i + 1} (Score: ${r.score}) | Source: ${r.document} ---\n`;
-      result += r.text.slice(0, 600);
-      if (r.text.length > 600) result += '...';
+      result += r.text.slice(0, 400);
+      if (r.text.length > 400) result += '...';
       if (r.code_snippets.length > 0) {
         result += '\n\nExample code:\n';
         for (const s of r.code_snippets.slice(0, 2)) {
-          result += `\`\`\`${s.lang}\n${s.code.slice(0, 400)}`;
-          if (s.code.length > 400) result += '\n...';
-          result += '\n```\n';
+          const compressed = compressCodeSnippet(s.code);
+          result += `\`\`\`${s.lang}\n${compressed}\n\`\`\`\n`;
         }
       }
     }
     result += '\n\n[END CODEX REFERENCE PATTERNS]';
     return result;
   }
+}
+
+function compressCodeSnippet(code: string): string {
+  // Strip import statements
+  let clean = code.replace(/^\s*import\s+[\s\S]*?;/gm, '');
+  // Strip multi-line comments
+  clean = clean.replace(/\/\*[\s\S]*?\*\//g, '');
+  // Strip single-line comments
+  clean = clean.replace(/^\s*\/\/.*$/gm, '');
+
+  // Clean up excessive blank lines
+  clean = clean.replace(/\n\s*\n+/g, '\n').trim();
+
+  if (clean.length > 500) {
+    return clean.slice(0, 500) + '\n...';
+  }
+  return clean;
 }
 
 let instance: CodexService | undefined;

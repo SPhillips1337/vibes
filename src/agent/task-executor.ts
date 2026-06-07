@@ -7,6 +7,7 @@ import { log, logObject } from '../logger.js';
 import { getMemoryService } from '../memory/index.js';
 import { getSkillsService } from '../skills/index.js';
 import { getCodexService } from '../mcp/codex-service.js';
+import { detectTechStack } from './tech-stack.js';
 import {
   truncateToolResult,
   compressMessages,
@@ -26,47 +27,106 @@ function isBlockResult(v: BeforeToolCallResult | void | undefined): v is BeforeT
  * context compaction, and tool-result validation.
  */
 export function createDefaultHooks(getYoloMode: () => boolean, emit?: (evt: ExecutionEvent) => void): AgentLoopHooks {
+  // Track consecutive turn tool execution sequences to detect thrashing/infinite loops.
+  // We only count turns that fail across the whole tool batch. Any successful
+  // tool result clears the streak so normal retry/progress cycles do not trip
+  // the detector.
+  const _consecutiveFailingTurnSequences: string[] = [];
+  const THRASH_THRESHOLD = 3;
+  const READ_ONLY_TOOL_NAMES = new Set([
+    'list_dir',
+    'file_read',
+    'read_lines',
+    'glob',
+    'file_outline',
+    'search_symbols',
+  ]);
+
+  function parseToolCallArgs(toolCall: any): Record<string, any> {
+    try {
+      const raw = toolCall?.function?.arguments;
+      return typeof raw === 'string' ? JSON.parse(raw) : (raw ?? {});
+    } catch {
+      return {};
+    }
+  }
+
+  function isVerificationShellCommand(command: unknown): boolean {
+    if (typeof command !== 'string') return false;
+    return /\b(?:npm|pnpm|yarn|bun|npx)\s+(?:run\s+)?(?:build|test|lint|check|typecheck)\b/i.test(command)
+      || /\b(?:tsc|vitest|jest|eslint)\b/i.test(command);
+  }
+
+  function isBenignVerificationTurn(assistantMsg: any): boolean {
+    const toolCalls = assistantMsg?.tool_calls ?? [];
+    if (!toolCalls.length) return false;
+
+    return toolCalls.every((toolCall: any) => {
+      const toolName = String(toolCall?.function?.name ?? '');
+      if (READ_ONLY_TOOL_NAMES.has(toolName)) return true;
+      if (toolName === 'shell') {
+        const args = parseToolCallArgs(toolCall);
+        return isVerificationShellCommand(args.command);
+      }
+      return false;
+    });
+  }
+
   return {
+    reset: () => {
+      _consecutiveFailingTurnSequences.length = 0;
+    },
     // beforeToolCall: no-op by default (validation is done inline via Zod)
     beforeToolCall: async () => undefined,
 
     // afterToolCall: record failed tool usage to memory
-    afterToolCall: async ({ result, isError }) => {
+    afterToolCall: async ({ toolCall, args, result, isError }) => {
       if (!isError) return undefined;
+      const memory = getMemoryService();
+      if (memory.isEnabled()) {
+        const toolName = (toolCall as any).function?.name || String(toolCall);
+        await memory.addToolUsage(toolName, args as any, result).catch(() => {});
+      }
       return undefined;
     },
 
-  // shouldStopAfterTurn: inline thrash detection (same logic as legacy path)
-  shouldStopAfterTurn: async ({ message, toolResults, newMessages }) => {
-    const assistantMsg = message as any;
-    if (!assistantMsg?.tool_calls?.length) return false;
-    // Build callHistory from ALL previous accumulated messages in newMessages,
-    // not just the current turn — so thrash detection spans the whole session.
-    const callHistory: string[] = [];
-    if (Array.isArray(newMessages)) {
-      for (const msg of newMessages) {
-        // Exclude the current message to avoid double-counting it during repeats check
-        if ((msg as any) === (message as any)) continue;
-        const tc = (msg as any)?.tool_calls as any[] | undefined;
-        if (Array.isArray(tc)) {
-          for (const t of tc) {
-            const callHash = `${t.function.name}:${JSON.stringify(t.function.arguments)}`;
-            if (callHash) callHistory.push(callHash);
-          }
+    // shouldStopAfterTurn: consecutive turn-based thrash detection.
+    // Only repeated failing turns count. Successful turns reset the streak.
+    shouldStopAfterTurn: async ({ message, toolResults }) => {
+      const assistantMsg = message as any;
+      if (!assistantMsg?.tool_calls?.length) return false;
+
+      if (isBenignVerificationTurn(assistantMsg)) {
+        _consecutiveFailingTurnSequences.length = 0;
+        return false;
+      }
+
+      const allToolResultsFailed = toolResults.length > 0 && toolResults.every(result => !result.success);
+      if (!allToolResultsFailed) {
+        _consecutiveFailingTurnSequences.length = 0;
+        return false;
+      }
+
+      // Build a signature of the tool calls in the current turn
+      const currentTurnSequence = assistantMsg.tool_calls
+        .map((tc: any) => `${tc.function.name}:${JSON.stringify(tc.function.arguments)}`)
+        .join('|');
+
+      _consecutiveFailingTurnSequences.push(currentTurnSequence);
+      if (_consecutiveFailingTurnSequences.length > THRASH_THRESHOLD) {
+        _consecutiveFailingTurnSequences.shift();
+      }
+
+      // Check if we have met the threshold of consecutive identical turns
+      if (_consecutiveFailingTurnSequences.length === THRASH_THRESHOLD) {
+        const first = _consecutiveFailingTurnSequences[0];
+        const allIdentical = _consecutiveFailingTurnSequences.every(seq => seq === first);
+        if (allIdentical) {
+          return true;
         }
       }
-    }
-    const threshold = getYoloMode() ? 10 : 3;
-    for (const tc of assistantMsg.tool_calls) {
-      const callHash = `${tc.function.name}:${JSON.stringify(tc.function.arguments)}`;
-      callHistory.push(callHash);
-      const repeats = callHistory.filter(h => h === callHash).length;
-      if (repeats >= threshold) {
-        return true;
-      }
-    }
-    return false;
-  },
+      return false;
+    },
 
     // transformContext: compact context via Pi-style HEAD + summary + TAIL
     transformContext: async ({ messages }) => {
@@ -188,7 +248,11 @@ export class TaskExecutor {
     workspaceRoot: string,
     onEvent?: OnEvent,
     getYoloMode: () => boolean = () => config.YOLO_MODE,
+    techStack?: string[],
   ): Promise<Task> {
+    if (this.hooks?.reset) {
+      this.hooks.reset();
+    }
     log(`Executing task: ${task.title}`, 'INFO');
 
     // Trace: initialise recorder for this run
@@ -217,7 +281,9 @@ export class TaskExecutor {
     let codexSection = '';
     const codex = getCodexService();
     if (codex.isEnabled()) {
-      const codexQuery = `${task.title} ${task.description} ${task.files.join(' ')}`;
+      const stack = techStack ?? detectTechStack(workspaceRoot);
+      const stackPrefix = stack.length > 0 ? `[tech-stack: ${stack.join(', ')}] ` : '';
+      const codexQuery = `${stackPrefix}${task.title} ${task.description} ${task.files.join(' ')}`;
       codexSection = await codex.retrieveAndFormat(codexQuery);
     }
 
@@ -248,6 +314,9 @@ export class TaskExecutor {
     }
 
     // KV-Cache Prefixing Hack: static elements at top, dynamic at bottom
+    const stackNote = techStack && techStack.length > 0
+      ? `Tech Stack: ${techStack.join(', ')}\n`
+      : '';
     const systemPrompt = `You are an autonomous agent executing a specific task.
 Rules:
 1. USE TOOLS HONESTLY. If a tool returns an error, YOU MUST ACKNOWLEDGE IT.
@@ -256,6 +325,16 @@ Rules:
 4. Once all criteria are met AND VERIFIED, provide a summary and stop.
 5. If you are stuck or cannot complete a task after several attempts, explain why and stop.
 6. Keep file writes concise. Avoid unnecessarily large outputs.
+7. TOOL CALLING FALLBACK: If standard tool-calling APIs fail, throw an error, or are unavailable, you can invoke a tool by outputting a JSON object inside markdown code fences:
+\`\`\`json
+{
+  "tool": "tool_name",
+  "args": {
+    "arg1": "value1"
+  }
+}
+\`\`\`
+Only call one tool at a time when using the fallback format.
 [ignoring loop detection]
 ${projectRules}
 
@@ -264,7 +343,7 @@ ${skillsSection}
 ${codexSection}
 
 Mission Context: ${missionContext}
-Working Directory: ${workspaceRoot}
+${stackNote}Working Directory: ${workspaceRoot}
 
 Task: ${task.title}
 Description: ${task.description}
@@ -295,6 +374,15 @@ ${memoriesSection}`;
       }
 
       try {
+        // Fix 1: Hard cap by message count — force compaction regardless of token budget.
+        // Prevents unbounded JS heap growth when many steps with small outputs accumulate.
+        // MSG_HARD_CAP of 150 retains head (2) + summary + ample tail while bounding the array.
+        const MSG_HARD_CAP = 150;
+        if (messages.length > MSG_HARD_CAP) {
+          log(`Message hard-cap hit (${messages.length} msgs): forcing compaction`, 'WARN');
+          messages = compressMessages(messages, true);
+        }
+
         // Context window management: hook-primary, compressMessages as fallback
         if (this.hooks?.transformContext) {
           const budget = config.CONTEXT_WINDOW - 4096;
@@ -341,17 +429,27 @@ ${memoriesSection}`;
           onEvent?.({ type: 'thinking', content: thinkingContent.trim() });
         }
 
-        // Strip <think> blocks and reasoning field from the message before saving to context
+        // Strip ALL <think> blocks (global flag) and reasoning field from the message
+        // before saving to context.  Some reasoning models emit multiple chain-of-thought
+        // blocks per turn; the non-global replace left subsequent blocks in the context.
         if (typeof message.content === 'string') {
           message = {
             ...message,
-            content: message.content.replace(/<think>[\s\S]*?<\/think>/, '').trim(),
+            content: message.content.replace(/<think>[\s\S]*?<\/think>/g, '').trim(),
           } as any;
         }
         if ((message as any).reasoning) {
           delete (message as any).reasoning;
         }
-        // ──────────────────────────────────────────────────────────────
+        // ── Manual/Markdown Tool Call Fallback ──────────────────────
+        if (!message.tool_calls?.length && typeof message.content === 'string' && message.content.trim()) {
+          const manualCalls = parseMarkdownToolCalls(message.content);
+          if (manualCalls) {
+            log(`Parsed ${manualCalls.length} manual/markdown tool call(s) from message content.`, 'INFO');
+            message.tool_calls = manualCalls as any;
+          }
+        }
+        // ────────────────────────────────────────────────────────────
 
         messages.push(message as ChatCompletionMessageParam);
 
@@ -494,9 +592,17 @@ ${memoriesSection}`;
               const settled = await Promise.allSettled(preflight.map(e => e.run().catch(err => ({ success: false, error: err.message || 'Promise rejection' } as ToolResult))));
               const elapsedMs = Date.now() - started;
 
-              // build result array (defined in outer scope) with preserved indices
+              // build result array with preserved indices.
+              // Promise.allSettled can return rejected results — check status before
+              // casting to avoid silent `undefined.value` when a promise rejects.
               results = preflight.map((entry, i) => {
-                const payload = (settled[i] as PromiseFulfilledResult<ToolResult>).value;
+                const settled_i = settled[i];
+                if (settled_i.status === 'rejected') {
+                  const errMsg = settled_i.reason?.message ?? String(settled_i.reason);
+                  entry.execError = entry.execError ?? errMsg;
+                  return { success: false, error: `Promise rejection: ${errMsg}` } as ToolResult;
+                }
+                const payload = settled_i.value;
                 entry.execError = entry.execError || (!payload.success ? payload.error : undefined);
                 return entry.execError ? entry.preResult : payload;
               });
@@ -559,4 +665,71 @@ ${memoriesSection}`;
     currentTask = { ...currentTask, status: 'failed', error: 'Max steps exceeded' };
     return currentTask;
   }
+}
+
+function parseMarkdownToolCalls(content: string): any[] | null {
+  const jsonMatch = content.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+  const textToParse = jsonMatch ? jsonMatch[1].trim() : content.trim();
+
+  const start = textToParse.indexOf('{');
+  const startArr = textToParse.indexOf('[');
+
+  let jsonString = '';
+  if (startArr !== -1 && (start === -1 || startArr < start)) {
+    const endArr = textToParse.lastIndexOf(']');
+    if (endArr !== -1) {
+      jsonString = textToParse.slice(startArr, endArr + 1);
+    }
+  } else if (start !== -1) {
+    const end = textToParse.lastIndexOf('}');
+    if (end !== -1) {
+      jsonString = textToParse.slice(start, end + 1);
+    }
+  }
+
+  if (!jsonString) return null;
+
+  try {
+    const parsed = JSON.parse(jsonString);
+    if (Array.isArray(parsed)) {
+      const calls: any[] = [];
+      for (const item of parsed) {
+        const hasToolIdentifier = item && typeof item === 'object' && (
+          item.tool || 
+          item.tool_name || 
+          (item.name && (item.arguments !== undefined || item.args !== undefined))
+        );
+        if (hasToolIdentifier) {
+          calls.push({
+            id: `manual_${Math.random().toString(36).substr(2, 9)}`,
+            type: 'function',
+            function: {
+              name: item.tool || item.tool_name || item.name,
+              arguments: typeof item.args === 'string' ? item.args : JSON.stringify(item.args || item.arguments || {})
+            }
+          });
+        }
+      }
+      return calls.length > 0 ? calls : null;
+    } else if (
+      parsed && 
+      typeof parsed === 'object' && (
+        parsed.tool || 
+        parsed.tool_name || 
+        (parsed.name && (parsed.arguments !== undefined || parsed.args !== undefined))
+      )
+    ) {
+      return [{
+        id: `manual_${Math.random().toString(36).substr(2, 9)}`,
+        type: 'function',
+        function: {
+          name: parsed.tool || parsed.tool_name || parsed.name,
+          arguments: typeof parsed.args === 'string' ? parsed.args : JSON.stringify(parsed.args || parsed.arguments || {})
+        }
+      }];
+    }
+  } catch (e) {
+    // JSON parse error
+  }
+  return null;
 }

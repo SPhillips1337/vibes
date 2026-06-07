@@ -81,10 +81,18 @@ export const shellTool: ToolDefinition = {
   description: 'Execute a shell command within the workspace directory. Network calls, key generation, sudo, global installs, and destructive operations are not permitted.',
   parameters: z.object({
     command: z.string(),
-    timeout: z.number().default(30000),
-    failOnError: z.boolean().default(true).describe("If true, non-zero exit codes fail the tool call. Set to false if you expect non-zero exit codes (e.g. grep finding no matches)."),
+    timeout: z.union([
+      z.number(),
+      z.object({
+        total: z.number().optional()
+      }).transform(val => val.total ?? 30000)
+    ]).default(30000),
+    failOnError: z.boolean().default(false).describe("If true, non-zero exit codes fail the tool call. Set to false if you expect non-zero exit codes (e.g. grep finding no matches)."),
   }),
   execute: async ({ command, timeout, failOnError }, context): Promise<ToolResult> => {
+    // Normalize timeout: if specified in seconds (<= 1000), convert to milliseconds
+    const msTimeout = timeout <= 1000 ? timeout * 1000 : timeout;
+
     // Security check before execution
     const blockReason = checkCommand(command);
     if (blockReason) {
@@ -95,7 +103,7 @@ export const shellTool: ToolDefinition = {
     try {
       const workspaceRoot = context?.workspaceRoot || process.cwd();
       const { stdout: rawOut, stderr: rawErr } = await execAsync(command, { 
-        timeout,
+        timeout: msTimeout,
         killSignal: 'SIGKILL',
         cwd: workspaceRoot,
       });

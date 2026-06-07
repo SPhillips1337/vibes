@@ -12,6 +12,7 @@ export interface SessionData {
 
 export class SessionService {
   private sessionsDir: string;
+  private writeQueues = new Map<string, Promise<void>>();
 
   constructor(workspaceRoot: string = process.cwd()) {
     this.sessionsDir = path.join(workspaceRoot, '.vibes', 'sessions');
@@ -29,20 +30,33 @@ export class SessionService {
    * Saves a mission and its event history to disk.
    */
   async saveSession(mission: Mission, events: ExecutionEvent[], compactionDetails?: CompactionDetails) {
-    await this.ensureDir();
-    const sessionPath = path.join(this.sessionsDir, `${mission.id}.json`);
-    const data: SessionData = {
-      mission,
-      events,
-      compactionDetails: compactionDetails ?? { readFiles: [], modifiedFiles: [] },
-      updatedAt: new Date().toISOString(),
-    };
-    
-    try {
-      await fs.writeFile(sessionPath, JSON.stringify(data, null, 2));
-    } catch (err: any) {
-      log(`Failed to save session ${mission.id}: ${err.message}`, 'ERROR');
-    }
+    const queue = this.writeQueues.get(mission.id) || Promise.resolve();
+
+    const nextWrite = queue.then(async () => {
+      await this.ensureDir();
+      const sessionPath = path.join(this.sessionsDir, `${mission.id}.json`);
+      const data: SessionData = {
+        mission,
+        events,
+        compactionDetails: compactionDetails ?? { readFiles: [], modifiedFiles: [] },
+        updatedAt: new Date().toISOString(),
+      };
+
+      try {
+        const tempPath = `${sessionPath}.tmp`;
+        await fs.writeFile(tempPath, JSON.stringify(data, null, 2), 'utf8');
+        await fs.rename(tempPath, sessionPath);
+      } catch (err: any) {
+        log(`Failed to save session ${mission.id}: ${err.message}`, 'ERROR');
+      }
+    }).finally(() => {
+      if (this.writeQueues.get(mission.id) === nextWrite) {
+        this.writeQueues.delete(mission.id);
+      }
+    });
+
+    this.writeQueues.set(mission.id, nextWrite);
+    await nextWrite;
   }
 
   /**
@@ -61,7 +75,13 @@ export class SessionService {
           const content = await fs.readFile(path.join(this.sessionsDir, file), 'utf8');
           sessions.push(JSON.parse(content));
         } catch (err) {
-          log(`Failed to read session file ${file}: ${err instanceof Error ? err.message : String(err)}`, 'DEBUG');
+          const filePath = path.join(this.sessionsDir, file);
+          log(`Failed to read session file ${file}: ${err instanceof Error ? err.message : String(err)}. Renaming to corrupted.`, 'WARN');
+          try {
+            await fs.rename(filePath, `${filePath}.corrupted`);
+          } catch (renameErr) {
+            log(`Failed to rename corrupted session file ${file}: ${renameErr}`, 'ERROR');
+          }
         }
       }
       
@@ -113,11 +133,16 @@ export class SessionService {
   }
 }
 
-let globalSessionService: SessionService | null = null;
+// Keyed by resolved workspaceRoot so concurrent missions with different roots
+// each retain their own service instance and queued writes are never dropped.
+const sessionServiceRegistry = new Map<string, SessionService>();
 
 export function getSessionService(workspaceRoot?: string): SessionService {
-  if (!globalSessionService || workspaceRoot) {
-    globalSessionService = new SessionService(workspaceRoot);
+  const key = workspaceRoot ?? process.cwd();
+  let svc = sessionServiceRegistry.get(key);
+  if (!svc) {
+    svc = new SessionService(workspaceRoot);
+    sessionServiceRegistry.set(key, svc);
   }
-  return globalSessionService;
+  return svc;
 }

@@ -7,7 +7,7 @@ interface TaskViewProps {
   isExecuting: boolean;
 }
 
-export const TaskView: React.FC<TaskViewProps> = ({ events, isExecuting }) => {
+export const TaskView: React.FC<TaskViewProps> = React.memo(({ events, isExecuting }) => {
   const [dots, setDots] = useState('');
 
   // Heartbeat animation
@@ -94,4 +94,4 @@ export const TaskView: React.FC<TaskViewProps> = ({ events, isExecuting }) => {
       )}
     </Box>
   );
-};
+});
