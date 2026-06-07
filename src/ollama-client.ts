@@ -11,6 +11,25 @@ export const getOllamaClient = () => new OpenAI({
   maxRetries: 2,
 });
 
+export function formatModelProviderError(error: unknown): string {
+  const rawMessage = error instanceof Error ? error.message : String(error);
+  const normalized = rawMessage.toLowerCase();
+
+  if (
+    normalized.includes('speculativedecoding capability gap')
+    || normalized.includes('predictions do not support native draft-model speculative decoding')
+  ) {
+    return [
+      'Model server configuration error: speculative decoding is enabled with a native draft model,',
+      'but this prediction protocol does not support it.',
+      'Disable the Draft Model / Speculative Decoding setting for the loaded model in LM Studio,',
+      'or switch to a compatible engine/runtime, then retry.',
+    ].join(' ');
+  }
+
+  return rawMessage;
+}
+
 export async function listModels() {
   try {
     const response = await getOllamaClient().models.list();

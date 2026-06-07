@@ -33,6 +33,44 @@ export function createDefaultHooks(getYoloMode: () => boolean, emit?: (evt: Exec
   // the detector.
   const _consecutiveFailingTurnSequences: string[] = [];
   const THRASH_THRESHOLD = 3;
+  const READ_ONLY_TOOL_NAMES = new Set([
+    'list_dir',
+    'file_read',
+    'read_lines',
+    'glob',
+    'file_outline',
+    'search_symbols',
+  ]);
+
+  function parseToolCallArgs(toolCall: any): Record<string, any> {
+    try {
+      const raw = toolCall?.function?.arguments;
+      return typeof raw === 'string' ? JSON.parse(raw) : (raw ?? {});
+    } catch {
+      return {};
+    }
+  }
+
+  function isVerificationShellCommand(command: unknown): boolean {
+    if (typeof command !== 'string') return false;
+    return /\b(?:npm|pnpm|yarn|bun|npx)\s+(?:run\s+)?(?:build|test|lint|check|typecheck)\b/i.test(command)
+      || /\b(?:tsc|vitest|jest|eslint)\b/i.test(command);
+  }
+
+  function isBenignVerificationTurn(assistantMsg: any): boolean {
+    const toolCalls = assistantMsg?.tool_calls ?? [];
+    if (!toolCalls.length) return false;
+
+    return toolCalls.every((toolCall: any) => {
+      const toolName = String(toolCall?.function?.name ?? '');
+      if (READ_ONLY_TOOL_NAMES.has(toolName)) return true;
+      if (toolName === 'shell') {
+        const args = parseToolCallArgs(toolCall);
+        return isVerificationShellCommand(args.command);
+      }
+      return false;
+    });
+  }
 
   return {
     reset: () => {
@@ -57,6 +95,11 @@ export function createDefaultHooks(getYoloMode: () => boolean, emit?: (evt: Exec
     shouldStopAfterTurn: async ({ message, toolResults }) => {
       const assistantMsg = message as any;
       if (!assistantMsg?.tool_calls?.length) return false;
+
+      if (isBenignVerificationTurn(assistantMsg)) {
+        _consecutiveFailingTurnSequences.length = 0;
+        return false;
+      }
 
       const allToolResultsFailed = toolResults.length > 0 && toolResults.every(result => !result.success);
       if (!allToolResultsFailed) {

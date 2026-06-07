@@ -180,7 +180,17 @@
 - **Files:** `src/agent/task-executor.ts`
 - **Commit:** `fix: make thrash detection count only repeated failing turns`
 
+### 25. Benign Verification Whitelist
+- **Lesson:** Small-model harnesses need a carve-out for validation-heavy convergence. Repeated read-only inspection turns and repeated build/test verification are normal progress signals, not loop signals.
+- **Fix:** Treat turns composed entirely of read-only tools (`list_dir`, `file_read`, `read_lines`, `glob`, `file_outline`, `search_symbols`) or explicit verification shell commands (`npm run build`, `npm test`, `tsc`, `vitest`, `jest`, `eslint`, etc.) as benign and do not advance the thrash streak.
+- **Files:** `src/agent/task-executor.ts`
+- **Commit:** `fix: whitelist benign verification turns in thrash detection`
 
+### 26. Provider Capability Error Classification
+- **Lesson:** OpenAI-compatible servers can reject requests because of engine/load configuration, even when the request payload and model output are valid. Presenting these errors as malformed model output sends users toward ineffective prompt changes.
+- **Fix:** Normalize known provider capability errors at the client boundary and show provider-specific remediation in the TUI. LM Studio's native draft-model speculative-decoding capability gap requires disabling the loaded model's Draft Model / Speculative Decoding setting or selecting a compatible engine.
+- **Files:** `src/ollama-client.ts`, `src/tui/hooks/use-mission.ts`, `src/index.tsx`
+- **Commit:** `fix: classify speculative decoding provider errors`
 
 
 

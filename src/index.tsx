@@ -176,7 +176,11 @@ const App = () => {
             <Text color="red" bold>Error Detected:</Text>
             <Text color="red">{error.length > 500 ? error.slice(0, 500) + '...' : error}</Text>
             <Box marginTop={1}>
-              <Text color="gray" dimColor>The model may have produced malformed output. Try a more specific description.</Text>
+              <Text color="gray" dimColor>
+                {error.toLowerCase().includes('speculative decoding')
+                  ? 'This is a model-server capability mismatch, not malformed model output.'
+                  : 'The model may have produced malformed output. Try a more specific description.'}
+              </Text>
             </Box>
           </Box>
         )}

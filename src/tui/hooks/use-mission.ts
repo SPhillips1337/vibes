@@ -10,6 +10,7 @@ import { log, addLogListener, removeLogListener } from '../../logger.js';
 import { config } from '../../config.js';
 import { getMCPService } from '../../mcp/mcp-service.js';
 import { getSessionService, SessionData } from '../../agent/session-service.js';
+import { formatModelProviderError } from '../../ollama-client.js';
 
 export const useMission = () => {
   const [mission, setMission] = useState<Mission | null>(null);
@@ -91,7 +92,7 @@ export const useMission = () => {
       const plan = await planner.planMission(description, workspaceRoot);
       setPendingMission(plan);
     } catch (err: any) {
-      setError(err.message);
+      setError(formatModelProviderError(err));
     } finally {
       setIsPlanning(false);
     }
@@ -186,7 +187,7 @@ export const useMission = () => {
       const completedMission = await scheduler.run();
       setMission({ ...completedMission });
     } catch (err: any) {
-      setError(err.message);
+      setError(formatModelProviderError(err));
     } finally {
       setIsExecuting(false);
       setPendingIntervention(null);
