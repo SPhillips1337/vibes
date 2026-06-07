@@ -28,7 +28,11 @@ export class UnifiedMemoryService {
   private async initializeRemote() {
     const apiKey = process.env.OPENAI_API_KEY || process.env.MEM0_API_KEY;
     if (!apiKey) {
-      log('Memory service: No API key found, remote memory disabled', 'WARN');
+      log(
+        'Memory service: No MEM0_API_KEY or OPENAI_API_KEY found — remote memory disabled.\n' +
+        '  → To use memory without an API key, set LOCAL_MEMORY=true in your .env.',
+        'WARN',
+      );
       return;
     }
     try {
@@ -139,12 +143,23 @@ export class UnifiedMemoryService {
 
 let globalMemoryService: UnifiedMemoryService | null = null;
 
+/** No-op stub returned when MEMORY_ENABLED=false, so callers never need null-checks. */
+const _disabledService = new UnifiedMemoryService('disabled');
+
 export function getMemoryService(userId?: string, opts?: MemoryOptions): UnifiedMemoryService {
+  // Respect the MEMORY_ENABLED flag — the constructor was previously always run
+  // regardless, which caused misleading "memory disabled" log spam on every task.
+  if (!config.MEMORY_ENABLED) return _disabledService;
+
   if (!globalMemoryService) {
-    globalMemoryService = new UnifiedMemoryService(userId || 'default_user', opts);
-    // Init local backend if needed (remote is sync in constructor)
-    if (globalMemoryService._useLocal) {
-      globalMemoryService._localService?.initialize().catch(() => {});
+    globalMemoryService = new UnifiedMemoryService(userId || config.MEMORY_USER_ID || 'default_user', opts);
+    // Await local backend initialization so isEnabled() is true before tasks run.
+    // Fire-and-forget was the original pattern, but it caused a race where the
+    // first task saw isEnabled()=false and skipped memory entirely.
+    if (globalMemoryService._useLocal && globalMemoryService._localService) {
+      globalMemoryService._localService.initialize().catch((err) => {
+        log(`Local memory initialization failed: ${err?.message ?? err}`, 'ERROR');
+      });
     }
   }
   return globalMemoryService;
