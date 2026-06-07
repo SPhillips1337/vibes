@@ -44,7 +44,7 @@ export const useMission = () => {
     setEvents(prev => {
       const newEvents = [...prev, ...buffered];
       if (schedulerRef.current) {
-        const currentMission = { ...schedulerRef.current['mission'] };
+        const currentMission = { ...schedulerRef.current.mission };
         setMission(currentMission);
         sessionService.saveSession(currentMission, newEvents, { readFiles: [], modifiedFiles: [] }).then(() => {
           sessionService.listSessions().then(setSessions);
@@ -53,6 +53,16 @@ export const useMission = () => {
       return newEvents;
     });
   }, [sessionService]);
+
+  // Cleanup flush timer on unmount to prevent post-unmount state updates / memory leaks
+  useEffect(() => {
+    return () => {
+      if (flushTimerRef.current) {
+        clearTimeout(flushTimerRef.current);
+        flushTimerRef.current = null;
+      }
+    };
+  }, []);
 
   // Load past sessions on mount
   useEffect(() => {

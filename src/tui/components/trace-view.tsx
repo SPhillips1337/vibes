@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Box, Text, useInput } from 'ink';
 import type { ExecutionEvent } from '../../agent/types.js';
 
@@ -62,11 +62,8 @@ export const TraceView: React.FC<TraceViewProps> = React.memo(({ events }) => {
   const totalEvents = events.length;
   const maxOffset = Math.max(0, totalEvents - VISIBLE_COUNT);
 
-  useEffect(() => {
-    if (scrollOffset === 0 && totalEvents > VISIBLE_COUNT) {
-      setScrollOffset(0);
-    }
-  }, [totalEvents, scrollOffset]);
+  // scrollOffset=0 means "pinned to bottom". No auto-scroll effect needed:
+  // new events are always appended to the end and become visible at offset 0.
 
   useInput((_input, key) => {
     if (key.upArrow) setScrollOffset(prev => Math.min(prev + 1, maxOffset));
