@@ -106,11 +106,16 @@ export const useMission = () => {
     
     // Auto-Git Snapshot Hack: Create a pre-mission snapshot for "Time Travel" / Undo
     try {
-      const { execSync } = await import('child_process');
-      const isGit = execSync('git rev-parse --is-inside-work-tree', { cwd: plan.workspace_root }).toString().trim() === 'true';
-      if (isGit) {
+      const { spawnSync } = await import('child_process');
+      const isGitCheck = spawnSync('git', ['rev-parse', '--is-inside-work-tree'], { cwd: plan.workspace_root, encoding: 'utf8' });
+      if (isGitCheck.stdout?.trim() === 'true') {
         log(`Creating pre-mission git snapshot for ${plan.id}`, 'INFO');
-        execSync(`git commit -am "vibes: pre-mission snapshot ${plan.id}" --allow-empty`, { cwd: plan.workspace_root });
+        // Use args array — never interpolate plan.id into a shell string.
+        spawnSync(
+          'git',
+          ['commit', '-am', `vibes: pre-mission snapshot ${plan.id}`, '--allow-empty'],
+          { cwd: plan.workspace_root }
+        );
       }
     } catch (err) {
       log(`Git snapshot skipped: ${err instanceof Error ? err.message : String(err)}`, 'DEBUG');
@@ -236,9 +241,12 @@ export const useMission = () => {
   const undoMission = useCallback(async () => {
     if (!mission) return;
     try {
-      const { execSync } = await import('child_process');
+      const { spawnSync } = await import('child_process');
       log(`Undoing mission ${mission.id} via git reset`, 'WARN');
-      execSync(`git reset --hard HEAD~1`, { cwd: mission.workspace_root });
+      const result = spawnSync('git', ['reset', '--hard', 'HEAD~1'], { cwd: mission.workspace_root, encoding: 'utf8' });
+      if (result.status !== 0) {
+        throw new Error(result.stderr || 'git reset failed');
+      }
       resetMission();
     } catch (err: any) {
       setError(`Undo failed: ${err.message}`);

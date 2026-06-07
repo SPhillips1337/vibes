@@ -5,9 +5,12 @@ import { log } from '../logger.js';
 import { InterventionManager } from './intervention-manager.js';
 import { getMemoryService } from '../memory/index.js';
 import { runStructuralAudit } from './structural-audit.js';
-import { execSync } from 'child_process';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
 import { existsSync, readFileSync } from 'fs';
 import { join } from 'path';
+
+const execFileAsync = promisify(execFile);
 
 export type InterventionResolution = {
   action: 'retry' | 'skip' | 'fail' | 'reply';
@@ -153,7 +156,7 @@ export class Scheduler {
             log(`Task approved by reviewer: ${updatedTask.title}`, 'INFO');
 
             // Verification phase — catches orphaned CSS, broken imports, syntax errors, and build failures
-            if (!this.verifyTask(task, updatedTask)) {
+            if (!await this.verifyTask(task, updatedTask)) {
               return;
             }
 
@@ -186,7 +189,7 @@ export class Scheduler {
           }
 
           // Verification phase (for non-reviewer path)
-          if (!this.verifyTask(task, updatedTask)) {
+          if (!await this.verifyTask(task, updatedTask)) {
             return;
           }
 
@@ -298,7 +301,7 @@ export class Scheduler {
     this.onEvent?.({ type: 'steps_updated', taskId: task.id, extraSteps: task.extraSteps });
   }
 
-  private verifyTask(task: Task, updatedTask: Task): boolean {
+  private async verifyTask(task: Task, updatedTask: Task): Promise<boolean> {
     let auditIssuesMessage = '';
     let auditIssuesList: any[] = [];
 
@@ -311,7 +314,7 @@ export class Scheduler {
         }
       }
 
-      const buildErrors = runBuildCheck(this.mission.workspace_root);
+      const buildErrors = await runBuildCheck(this.mission.workspace_root);
       if (buildErrors.length > 0) {
         auditIssuesMessage += `Build compilation failed with errors:\n${buildErrors.map(e => `- ${e}`).join('\n')}\n\n`;
       }
@@ -365,7 +368,10 @@ export class Scheduler {
   }
 }
 
-function runBuildCheck(workspaceRoot: string): string[] {
+// Async build check — uses execFileAsync instead of execSync so the TypeScript
+// compile does not block the Node.js event loop (and freeze the TUI) for its
+// full duration, which can be several seconds on a large project.
+async function runBuildCheck(workspaceRoot: string): Promise<string[]> {
   try {
     const pkgPath = join(workspaceRoot, 'package.json');
     if (!existsSync(pkgPath)) return [];
@@ -374,11 +380,11 @@ function runBuildCheck(workspaceRoot: string): string[] {
     if (!pkg.scripts || !pkg.scripts.build) return [];
 
     log('Running workspace build verification check...', 'INFO');
-    execSync('npm run build', { cwd: workspaceRoot, stdio: 'pipe' });
+    await execFileAsync('npm', ['run', 'build'], { cwd: workspaceRoot });
     return [];
   } catch (error: any) {
-    const stdout = error.stdout ? error.stdout.toString() : '';
-    const stderr = error.stderr ? error.stderr.toString() : '';
+    const stdout = error.stdout ? String(error.stdout) : '';
+    const stderr = error.stderr ? String(error.stderr) : '';
     const output = `${stdout}\n${stderr}`;
 
     const errorLines = output

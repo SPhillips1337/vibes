@@ -364,11 +364,13 @@ ${memoriesSection}`;
           onEvent?.({ type: 'thinking', content: thinkingContent.trim() });
         }
 
-        // Strip <think> blocks and reasoning field from the message before saving to context
+        // Strip ALL <think> blocks (global flag) and reasoning field from the message
+        // before saving to context.  Some reasoning models emit multiple chain-of-thought
+        // blocks per turn; the non-global replace left subsequent blocks in the context.
         if (typeof message.content === 'string') {
           message = {
             ...message,
-            content: message.content.replace(/<think>[\s\S]*?<\/think>/, '').trim(),
+            content: message.content.replace(/<think>[\s\S]*?<\/think>/g, '').trim(),
           } as any;
         }
         if ((message as any).reasoning) {
@@ -525,9 +527,17 @@ ${memoriesSection}`;
               const settled = await Promise.allSettled(preflight.map(e => e.run().catch(err => ({ success: false, error: err.message || 'Promise rejection' } as ToolResult))));
               const elapsedMs = Date.now() - started;
 
-              // build result array (defined in outer scope) with preserved indices
+              // build result array with preserved indices.
+              // Promise.allSettled can return rejected results — check status before
+              // casting to avoid silent `undefined.value` when a promise rejects.
               results = preflight.map((entry, i) => {
-                const payload = (settled[i] as PromiseFulfilledResult<ToolResult>).value;
+                const settled_i = settled[i];
+                if (settled_i.status === 'rejected') {
+                  const errMsg = settled_i.reason?.message ?? String(settled_i.reason);
+                  entry.execError = entry.execError ?? errMsg;
+                  return { success: false, error: `Promise rejection: ${errMsg}` } as ToolResult;
+                }
+                const payload = settled_i.value;
                 entry.execError = entry.execError || (!payload.success ? payload.error : undefined);
                 return entry.execError ? entry.preResult : payload;
               });

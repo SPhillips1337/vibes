@@ -65,6 +65,10 @@ if (!finalParsed.success) {
   process.exit(1);
 }
 
+// IMPORTANT: Always read config values as `config.FIELD` at call-time.
+// Do NOT destructure at module level (e.g. `const { MAX_STEPS } = config`).
+// updateConfig() mutates this object in-place via Object.assign; destructured
+// copies will hold stale values for the lifetime of the module.
 export const config: Config = finalParsed.data;
 
 export function updateConfig(newConfig: Partial<Config>) {
