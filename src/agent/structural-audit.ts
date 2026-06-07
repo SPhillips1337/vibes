@@ -1,5 +1,5 @@
 import { readFileSync, existsSync, readdirSync, statSync } from 'fs';
-import { join, dirname, resolve, extname, relative } from 'path';
+import { join, dirname, resolve, extname, relative, sep } from 'path';
 import { log } from '../logger.js';
 import { detectTechStack } from './tech-stack.js';
 
@@ -15,11 +15,19 @@ const CSS_IMPORT_RE = /import\s+['"]([^'"]+\.css)['"]/g;
 
 const EXT_ORDER = ['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.json'];
 
-function resolveImportPath(baseDir: string, importPath: string): string | null {
+function resolveImportPath(baseDir: string, importPath: string, workspaceRoot?: string): string | null {
   if (!importPath.startsWith('.') && !importPath.startsWith('/')) {
     return null;
   }
   const resolved = resolve(baseDir, importPath);
+
+  // Guard: prevent path traversal outside the workspace root.
+  // A malicious repo could embed `import foo from '../../../../etc/passwd'`.
+  if (workspaceRoot) {
+    const root = resolve(workspaceRoot) + sep;
+    if (!resolved.startsWith(root)) return null;
+  }
+
   if (existsSync(resolved) && statSync(resolved).isFile()) return resolved;
   for (const ext of EXT_ORDER) {
     const withExt = resolved + ext;
@@ -199,7 +207,7 @@ export function runStructuralAudit(workspaceRoot: string, taskFiles: string[]): 
 
       for (const imp of importPaths) {
         if (!imp.startsWith('.')) continue;
-        const resolved = resolveImportPath(dirname(file), imp);
+        const resolved = resolveImportPath(dirname(file), imp, workspaceRoot);
         if (!resolved) {
           issues.push({
             type: 'import',
@@ -336,7 +344,7 @@ export function runStructuralAudit(workspaceRoot: string, taskFiles: string[]): 
         const staticImportRegex = /import\s+[\s\S]*?from\s+['"]([^'"]+)['"]/g;
         let staticMatch: RegExpExecArray | null;
         while ((staticMatch = staticImportRegex.exec(content)) !== null) {
-          const resolved = resolveImportPath(dirname(file), staticMatch[1]);
+          const resolved = resolveImportPath(dirname(file), staticMatch[1], workspaceRoot);
           if (resolved) {
             staticImports.add(resolved);
           }
@@ -345,7 +353,7 @@ export function runStructuralAudit(workspaceRoot: string, taskFiles: string[]): 
         const dynamicImportRegex = /import\s*\(\s*['"]([^'"]+)['"]\s*\)/g;
         let dynamicMatch: RegExpExecArray | null;
         while ((dynamicMatch = dynamicImportRegex.exec(content)) !== null) {
-          const resolved = resolveImportPath(dirname(file), dynamicMatch[1]);
+          const resolved = resolveImportPath(dirname(file), dynamicMatch[1], workspaceRoot);
           if (resolved && staticImports.has(resolved)) {
             issues.push({
               type: 'import',

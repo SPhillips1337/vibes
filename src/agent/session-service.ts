@@ -133,11 +133,16 @@ export class SessionService {
   }
 }
 
-let globalSessionService: SessionService | null = null;
+// Keyed by resolved workspaceRoot so concurrent missions with different roots
+// each retain their own service instance and queued writes are never dropped.
+const sessionServiceRegistry = new Map<string, SessionService>();
 
 export function getSessionService(workspaceRoot?: string): SessionService {
-  if (!globalSessionService || workspaceRoot) {
-    globalSessionService = new SessionService(workspaceRoot);
+  const key = workspaceRoot ?? process.cwd();
+  let svc = sessionServiceRegistry.get(key);
+  if (!svc) {
+    svc = new SessionService(workspaceRoot);
+    sessionServiceRegistry.set(key, svc);
   }
-  return globalSessionService;
+  return svc;
 }

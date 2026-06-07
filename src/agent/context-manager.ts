@@ -84,13 +84,19 @@ export function compressMessages(messages: ChatCompletionMessageParam[], force =
   const PRESERVE_TAIL = 6;
 
   if (messages.length <= PRESERVE_HEAD + PRESERVE_TAIL) {
-    return messages.map((msg, i) => {
+    const truncated = messages.map((msg, i) => {
       if (i === 0) return msg;
       if (typeof msg.content === 'string' && estimateTokens(msg.content) > 1024) {
         return { ...msg, content: truncateToTokenBudget(msg.content, 1024) };
       }
       return msg;
     });
+    // Post-check: individual truncation may still leave the collective array over
+    // budget (e.g. many small messages).  If so, fall through to full compression.
+    if (estimateMessagesTokens(truncated) <= budget) return truncated;
+    // Replace `messages` with the truncated version so the full path works on
+    // already-truncated content, then fall through below.
+    return compressMessages(truncated, force);
   }
 
   const head = messages.slice(0, PRESERVE_HEAD);

@@ -23,8 +23,10 @@ export function extractJsonContent(text: string): string {
     if (lineStartJson && lineStartJson.index !== undefined) {
       trimmed = trimmed.slice(lineStartJson.index).trim();
     } else {
-      // Fallback: strip the whole <think> tag and everything until the first '{'
-      trimmed = trimmed.replace(/<think>[\s\S]*/, '').trim();
+      // Fallback: strip the whole <think> tag and everything until the first '{'.
+      // Guard against very large inputs before the greedy [\.\s\S]* match.
+      if (trimmed.length > 200_000) trimmed = trimmed.slice(0, 200_000);
+      trimmed = trimmed.replace(/<think>\s*[\s\S]*/, '').trim();
     }
   }
 
@@ -117,8 +119,10 @@ export function repairJson(json: string): string {
 
   repaired = result;
 
-  // Ensure it starts and ends with braces
-  if (!repaired.startsWith('{')) repaired = '{' + repaired;
+  // Ensure it starts and ends with braces — but only if it doesn't look like
+  // a JSON array already (arrays start with '[').  Prepending '{' to an array
+  // would produce invalid JSON like `{[...]}` and corrupt array responses.
+  if (!repaired.startsWith('{') && !repaired.startsWith('[')) repaired = '{' + repaired;
   
   // Count braces to find missing closures
   let openBraces = 0;
