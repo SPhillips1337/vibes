@@ -10,6 +10,7 @@ import { log, addLogListener, removeLogListener } from '../../logger.js';
 import { config } from '../../config.js';
 import { getMCPService } from '../../mcp/mcp-service.js';
 import { getSessionService, SessionData } from '../../agent/session-service.js';
+import { formatModelProviderError } from '../../ollama-client.js';
 
 export const useMission = () => {
   const [mission, setMission] = useState<Mission | null>(null);
@@ -29,19 +30,56 @@ export const useMission = () => {
   const isYoloRef = useRef(config.YOLO_MODE);
   const sessionService = getSessionService();
 
+  // Event buffer for throttled rendering — prevents re-render storming
+  const eventBufferRef = useRef<ExecutionEvent[]>([]);
+  const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const flushEvents = useCallback(() => {
+    if (flushTimerRef.current) {
+      clearTimeout(flushTimerRef.current);
+      flushTimerRef.current = null;
+    }
+    if (eventBufferRef.current.length === 0) return;
+    const buffered = eventBufferRef.current;
+    eventBufferRef.current = [];
+    setEvents(prev => {
+      const newEvents = [...prev, ...buffered];
+      if (schedulerRef.current) {
+        const currentMission = { ...schedulerRef.current.mission };
+        setMission(currentMission);
+        sessionService.saveSession(currentMission, newEvents, { readFiles: [], modifiedFiles: [] }).then(() => {
+          sessionService.listSessions().then(setSessions);
+        });
+      }
+      return newEvents;
+    });
+  }, [sessionService]);
+
+  // Cleanup flush timer on unmount to prevent post-unmount state updates / memory leaks
+  useEffect(() => {
+    return () => {
+      if (flushTimerRef.current) {
+        clearTimeout(flushTimerRef.current);
+        flushTimerRef.current = null;
+      }
+    };
+  }, []);
+
   // Load past sessions on mount
   useEffect(() => {
     sessionService.listSessions().then(setSessions);
   }, [sessionService]);
 
-  // System Log Stream Integration
+  // System Log Stream Integration — uses event buffer to avoid re-render storming
   useEffect(() => {
     const listener = (level: any, message: string, timestamp: string) => {
-      setEvents(prev => [...prev, { type: 'system_log', level, message, timestamp }]);
+      eventBufferRef.current.push({ type: 'system_log', level, message, timestamp });
+      if (!flushTimerRef.current) {
+        flushTimerRef.current = setTimeout(flushEvents, 100);
+      }
     };
     addLogListener(listener);
     return () => removeLogListener(listener);
-  }, []);
+  }, [flushEvents]);
 
   const toggleYoloMode = useCallback(() => {
     setIsYoloMode(prev => {
@@ -64,7 +102,7 @@ export const useMission = () => {
       const plan = await planner.planMission(description, workspaceRoot);
       setPendingMission(plan);
     } catch (err: any) {
-      setError(err.message);
+      setError(formatModelProviderError(err));
     } finally {
       setIsPlanning(false);
     }
@@ -79,11 +117,16 @@ export const useMission = () => {
     
     // Auto-Git Snapshot Hack: Create a pre-mission snapshot for "Time Travel" / Undo
     try {
-      const { execSync } = await import('child_process');
-      const isGit = execSync('git rev-parse --is-inside-work-tree', { cwd: plan.workspace_root }).toString().trim() === 'true';
-      if (isGit) {
+      const { spawnSync } = await import('child_process');
+      const isGitCheck = spawnSync('git', ['rev-parse', '--is-inside-work-tree'], { cwd: plan.workspace_root, encoding: 'utf8' });
+      if (isGitCheck.stdout?.trim() === 'true') {
         log(`Creating pre-mission git snapshot for ${plan.id}`, 'INFO');
-        execSync(`git commit -am "vibes: pre-mission snapshot ${plan.id}" --allow-empty`, { cwd: plan.workspace_root });
+        // Use args array — never interpolate plan.id into a shell string.
+        spawnSync(
+          'git',
+          ['commit', '-am', `vibes: pre-mission snapshot ${plan.id}`, '--allow-empty'],
+          { cwd: plan.workspace_root }
+        );
       }
     } catch (err) {
       log(`Git snapshot skipped: ${err instanceof Error ? err.message : String(err)}`, 'DEBUG');
@@ -125,21 +168,12 @@ export const useMission = () => {
         if (event.type === 'steps_updated') {
           setActiveMaxSteps(config.MAX_STEPS + event.extraSteps);
         }
-        
-        setEvents(prev => {
-          const newEvents = [...prev, event];
-          
-          if (schedulerRef.current) {
-            const currentMission = { ...schedulerRef.current['mission'] };
-            setMission(currentMission);
-            // Auto-save on every event with latest events array
-            sessionService.saveSession(currentMission, newEvents, { readFiles: [], modifiedFiles: [] }).then(() => {
-              sessionService.listSessions().then(setSessions);
-            });
-          }
-          
-          return newEvents;
-        });
+
+        // Buffer events and flush periodically to avoid re-render storming
+        eventBufferRef.current.push(event);
+        if (!flushTimerRef.current) {
+          flushTimerRef.current = setTimeout(flushEvents, 100);
+        }
       };
 
       const scheduler = new Scheduler(plan, executor, onEvent, () => isYoloRef.current);
@@ -163,7 +197,7 @@ export const useMission = () => {
       const completedMission = await scheduler.run();
       setMission({ ...completedMission });
     } catch (err: any) {
-      setError(err.message);
+      setError(formatModelProviderError(err));
     } finally {
       setIsExecuting(false);
       setPendingIntervention(null);
@@ -218,9 +252,12 @@ export const useMission = () => {
   const undoMission = useCallback(async () => {
     if (!mission) return;
     try {
-      const { execSync } = await import('child_process');
+      const { spawnSync } = await import('child_process');
       log(`Undoing mission ${mission.id} via git reset`, 'WARN');
-      execSync(`git reset --hard HEAD~1`, { cwd: mission.workspace_root });
+      const result = spawnSync('git', ['reset', '--hard', 'HEAD~1'], { cwd: mission.workspace_root, encoding: 'utf8' });
+      if (result.status !== 0) {
+        throw new Error(result.stderr || 'git reset failed');
+      }
       resetMission();
     } catch (err: any) {
       setError(`Undo failed: ${err.message}`);

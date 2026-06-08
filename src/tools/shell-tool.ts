@@ -49,19 +49,30 @@ const BLOCKED_PATTERNS: RegExp[] = [
   /\bdocker\s+(run|push|pull|exec|build)\b/i,
   /\bkubectl\b/i,
   // Sensitive paths
-  /\/(etc|var|boot|root|proc|sys|dev)\b/i,
+  // Match sensitive system directories as path roots, but NOT /dev/null which is a
+  // safe standard redirect target. We match /dev only when NOT followed by /null.
+  /\/(etc|var|boot|root|proc|sys)\b/i,
+  /\/dev\/(?!null\b)/i,
   /\/\.ssh\b/i,
   /\/\.env\b/i, // Prevent reading root .env if possible (though agent often needs project .env)
 ];
 
+// Safe I/O redirect targets that must never trigger the /dev block.
+// Agents routinely emit `2>/dev/null` or `>/dev/null` to suppress output.
+const SAFE_REDIRECT_RE = /(?:^|\s)[0-9]*(?:>>?|&>)\s*\/dev\/null\b/g;
+
 function checkCommand(command: string): string | null {
   // Path traversal check
-  if (command.includes('..')) {
-    return 'Path traversal detected (.. is not allowed in shell commands)';
+  if (command.includes('..') || /%2e/i.test(command)) {
+    return 'Path traversal detected (.. or encoded variants not allowed in shell commands)';
   }
 
+  // Strip safe redirects (>/dev/null, 2>/dev/null, &>/dev/null) before pattern
+  // matching so they never falsely trigger the sensitive-path block.
+  const sanitized = command.replace(SAFE_REDIRECT_RE, '');
+
   for (const pattern of BLOCKED_PATTERNS) {
-    if (pattern.test(command)) {
+    if (pattern.test(sanitized)) {
       return `Command blocked by security policy (matched: ${pattern.source})`;
     }
   }
@@ -81,10 +92,37 @@ export const shellTool: ToolDefinition = {
   description: 'Execute a shell command within the workspace directory. Network calls, key generation, sudo, global installs, and destructive operations are not permitted.',
   parameters: z.object({
     command: z.string(),
-    timeout: z.number().default(30000),
-    failOnError: z.boolean().default(true).describe("If true, non-zero exit codes fail the tool call. Set to false if you expect non-zero exit codes (e.g. grep finding no matches)."),
+    // Small models (qwen3.5-2b etc.) sometimes emit timeout as {} or {total:N} instead of a number.
+    // Accept any shape and coerce to a millisecond number.
+    timeout: z.union([
+      z.number(),
+      z.object({
+        total: z.number().optional(),
+        ms: z.number().optional(),
+        value: z.number().optional(),
+      }).transform(val => val.total ?? val.ms ?? val.value ?? 30000),
+      z.null().transform(() => 30000),
+      z.undefined().transform(() => 30000),
+    ]).default(30000).catch(30000),
+    // Small models sometimes emit failOnError as {"condition":false} instead of a boolean.
+    // Accept any shape and coerce to a boolean.
+    failOnError: z.union([
+      z.boolean(),
+      z.object({
+        condition: z.boolean().optional(),
+        value: z.boolean().optional(),
+        enabled: z.boolean().optional(),
+      }).transform(val => val.condition ?? val.value ?? val.enabled ?? false),
+      z.null().transform(() => false),
+      z.undefined().transform(() => false),
+    ]).default(false).catch(false).describe("If true, non-zero exit codes fail the tool call. Set to false if you expect non-zero exit codes (e.g. grep finding no matches)."),
   }),
   execute: async ({ command, timeout, failOnError }, context): Promise<ToolResult> => {
+    // Timeout from Zod schema is already in milliseconds (default 30000).
+    // No seconds-guessing heuristic: small models may pass low ms values, and
+    // the schema's .catch(30000) provides a safe floor.
+    const msTimeout = timeout;
+
     // Security check before execution
     const blockReason = checkCommand(command);
     if (blockReason) {
@@ -95,7 +133,7 @@ export const shellTool: ToolDefinition = {
     try {
       const workspaceRoot = context?.workspaceRoot || process.cwd();
       const { stdout: rawOut, stderr: rawErr } = await execAsync(command, { 
-        timeout,
+        timeout: msTimeout,
         killSignal: 'SIGKILL',
         cwd: workspaceRoot,
       });

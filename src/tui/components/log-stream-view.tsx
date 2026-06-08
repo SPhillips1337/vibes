@@ -1,14 +1,36 @@
-import React from 'react';
-import { Box, Text } from 'ink';
+import React, { useState, useEffect } from 'react';
+import { Box, Text, useInput } from 'ink';
 import { ExecutionEvent } from '../../agent/types.js';
 
 interface LogStreamViewProps {
   events: ExecutionEvent[];
 }
 
-export const LogStreamView: React.FC<LogStreamViewProps> = ({ events }) => {
-  // Show last 100 events for the log stream
-  const visibleEvents = events.slice(-100);
+const VISIBLE_COUNT = 15;
+
+export const LogStreamView: React.FC<LogStreamViewProps> = React.memo(({ events }) => {
+  const [scrollOffset, setScrollOffset] = useState(0);
+
+  const totalEvents = events.length;
+  const maxOffset = Math.max(0, totalEvents - VISIBLE_COUNT);
+
+  // Auto-scroll to bottom when new events arrive, unless user has scrolled up
+  useEffect(() => {
+    if (scrollOffset === 0 && totalEvents > VISIBLE_COUNT) {
+      setScrollOffset(0);
+    }
+  }, [totalEvents, scrollOffset]);
+
+  useInput((_input, key) => {
+    if (key.upArrow) setScrollOffset(prev => Math.min(prev + 1, maxOffset));
+    if (key.downArrow) setScrollOffset(prev => Math.max(0, prev - 1));
+    if (key.pageUp) setScrollOffset(prev => Math.min(prev + VISIBLE_COUNT, maxOffset));
+    if (key.pageDown) setScrollOffset(prev => Math.max(0, prev - VISIBLE_COUNT));
+    if (key.home) setScrollOffset(maxOffset);
+    if (key.end) setScrollOffset(0);
+  });
+
+  const visibleEvents = events.slice(totalEvents - VISIBLE_COUNT - scrollOffset, totalEvents - scrollOffset);
 
   const getLevelColor = (level: string) => {
     switch (level) {
@@ -22,14 +44,19 @@ export const LogStreamView: React.FC<LogStreamViewProps> = ({ events }) => {
   return (
     <Box flexDirection="column" padding={1} borderStyle="round" borderColor="gray">
       <Box paddingBottom={1} justifyContent="space-between">
-        <Text bold color="white">LOG STREAM (Last 100 events)</Text>
-        <Text color="gray">{events.length} total events</Text>
+        <Text bold color="white">LOG STREAM</Text>
+        <Box gap={1}>
+          <Text color="gray">({totalEvents} total)</Text>
+          {scrollOffset > 0 && (
+            <Text color="yellow" bold>↑ {scrollOffset} lines</Text>
+          )}
+        </Box>
       </Box>
-      
+
       <Box flexDirection="column">
         {visibleEvents.map((event, idx) => {
           const timestamp = 'timestamp' in event ? (event.timestamp as string).split('T')[1].split('.')[0] : new Date().toLocaleTimeString();
-          
+
           switch (event.type) {
             case 'system_log':
               return (
@@ -127,6 +154,10 @@ export const LogStreamView: React.FC<LogStreamViewProps> = ({ events }) => {
           }
         })}
       </Box>
+
+      <Box marginTop={1}>
+        <Text color="gray" dimColor>↑↓ Scroll | PgUp/PgDn Page | Home/End Jump</Text>
+      </Box>
     </Box>
   );
-};
+});

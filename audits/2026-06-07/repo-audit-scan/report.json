@@ -1,0 +1,43 @@
+{
+  "findings": [],
+  "generated_at": "2026-06-07T08:33:20.948383+00:00",
+  "metadata": {
+    "detected_frameworks": [
+      "angular",
+      "nextjs",
+      "npm",
+      "react",
+      "vue"
+    ],
+    "detected_languages": [
+      "javascript",
+      "json",
+      "markdown",
+      "shell",
+      "typescript"
+    ],
+    "git_branch": null,
+    "git_commit": null,
+    "git_remote": null,
+    "repository_path": "/home/stephen/Vibes",
+    "scan_timestamp": "2026-06-07T08:33:20.947235+00:00",
+    "scanned_files_count": 155,
+    "schema_version": "1.0",
+    "skipped_files_count": 29733,
+    "tool_version": "0.1.0"
+  },
+  "report_id": "scan-20260607-083320-fca4cd8e",
+  "schema_version": "1.0",
+  "summary": {
+    "counts_by_severity": {
+      "critical": 0,
+      "high": 0,
+      "info": 0,
+      "low": 0,
+      "medium": 0
+    },
+    "highest_ian_score": null,
+    "text": "Scanned 155 files with 0 findings. Dependency scan: 0 packages, mode=none.",
+    "total_findings": 0
+  }
+}

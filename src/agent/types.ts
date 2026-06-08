@@ -23,6 +23,12 @@ export const TaskSchema = z.object({
   userGuidance: z.string().optional(),
   // Extra steps granted on retry (added to MAX_STEPS)
   extraSteps: z.number().optional(),
+  // Issues found during pre-completion structural audit
+  auditIssues: z.array(z.object({
+    type: z.enum(['import', 'css_orphan', 'syntax', 'prop_mismatch', 'dead_code']),
+    file: z.string(),
+    message: z.string(),
+  })).optional(),
 });
 
 export type Task = z.infer<typeof TaskSchema>;
@@ -43,6 +49,8 @@ export const MissionSchema = z.object({
   workspace_root: z.string().default(process.cwd()),
   milestones: z.array(MilestoneSchema),
   status: z.enum(['planning', 'executing', 'completed', 'failed', 'awaiting_intervention']).default('planning'),
+  /** Tech stack detected at planning time — e.g. ['typescript', 'react', 'css'] */
+  tech_stack: z.array(z.string()).optional(),
 });
 
 export type Mission = z.infer<typeof MissionSchema>;
@@ -189,6 +197,9 @@ export interface AgentLoopHooks {
    * Return `[]` to let the agent end normally.
    */
   getFollowUpMessages?: () => Promise<ExecutionEvent[]>;
+
+  /** Optional hook to reset transient loop/thrash state at task boundary. */
+  reset?: () => void;
 }
 
 /** Aggregated hook configuration for TaskExecutor. */

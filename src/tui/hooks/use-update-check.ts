@@ -1,9 +1,26 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { execSync, exec } from 'child_process';
+import { existsSync } from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
 const GITHUB_REPO = 'SPhillips1337/vibes';
 const GITHUB_BRANCH = 'main';
 const CHECK_INTERVAL_MS = 5 * 60 * 1000; // Check every 5 minutes
+const PACKAGE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
+
+function isSourceCheckout(): boolean {
+  if (!existsSync(path.join(PACKAGE_ROOT, '.git'))) return false;
+  try {
+    const remote = execSync('git remote get-url origin', {
+      cwd: PACKAGE_ROOT,
+      encoding: 'utf-8',
+    }).trim().toLowerCase();
+    return remote.includes('sphillips1337/vibes');
+  } catch {
+    return false;
+  }
+}
 
 export interface UpdateInfo {
   available: boolean;
@@ -26,9 +43,10 @@ export function useUpdateCheck() {
   const checkTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const getLocalHead = useCallback((): string | null => {
+    if (!isSourceCheckout()) return null;
     try {
       return execSync('git rev-parse HEAD', {
-        cwd: process.cwd(),
+        cwd: PACKAGE_ROOT,
         encoding: 'utf-8',
       }).trim();
     } catch {
@@ -125,7 +143,7 @@ export function useUpdateCheck() {
     // Run git pull, npm install, npm run build sequentially
     const pullProcess = exec(
       'git pull origin main 2>&1',
-      { cwd: process.cwd(), encoding: 'utf-8' }
+      { cwd: PACKAGE_ROOT, encoding: 'utf-8' }
     );
 
     let pullOutput = '';
@@ -148,7 +166,7 @@ export function useUpdateCheck() {
 
       const installProcess = exec(
         'npm install 2>&1',
-        { cwd: process.cwd(), encoding: 'utf-8' }
+        { cwd: PACKAGE_ROOT, encoding: 'utf-8' }
       );
 
       let installOutput = '';
@@ -170,7 +188,7 @@ export function useUpdateCheck() {
 
         const buildProcess = exec(
           'npm run build 2>&1',
-          { cwd: process.cwd(), encoding: 'utf-8' }
+          { cwd: PACKAGE_ROOT, encoding: 'utf-8' }
         );
 
         let buildOutput = '';

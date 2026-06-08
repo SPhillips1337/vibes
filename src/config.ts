@@ -28,6 +28,10 @@ const ConfigSchema = z.object({
   LOCAL_MEMORY: z.union([z.boolean(), z.string().transform(v => v === 'true')]).default(false),
   CODEX_ENABLED: z.union([z.boolean(), z.string().transform(v => v !== 'false')]).default(true),
   CODEX_TOP_K: z.coerce.number().default(3),
+  ENABLE_STRUCTURAL_AUDIT: z.union([z.boolean(), z.string().transform(v => v !== 'false')]).default(true),
+  ENABLE_ADVERSARIAL_AUDIT: z.union([z.boolean(), z.string().transform(v => v === 'true')]).default(false),
+  CODEX_SCRIPT_PATH: z.string().default(''),
+  CODEX_PYTHON_PATH: z.string().default(''),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;
@@ -63,7 +67,15 @@ if (!finalParsed.success) {
   process.exit(1);
 }
 
+// IMPORTANT: Always read config values as `config.FIELD` at call-time.
+// Do NOT destructure at module level (e.g. `const { MAX_STEPS } = config`).
+// updateConfig() mutates this object in-place via Object.assign; destructured
+// copies will hold stale values for the lifetime of the module.
 export const config: Config = finalParsed.data;
+
+export function hasPersistentConfig(): boolean {
+  return fs.existsSync(CONFIG_PATH);
+}
 
 export function updateConfig(newConfig: Partial<Config>) {
   try {

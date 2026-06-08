@@ -1,15 +1,63 @@
 import OpenAI from 'openai';
 import { config } from './config.js';
 import { log } from './logger.js';
+import fetch from 'node-fetch';
+import HttpAgent from 'agentkeepalive';
+
+const HttpKeepAliveAgent = HttpAgent;
+const HttpsKeepAliveAgent = HttpAgent.HttpsAgent;
+
+/**
+ * Custom HTTP/HTTPS agents allowing up to 4 concurrent TCP connections.
+ * The OpenAI SDK creates a single shared agentkeepalive agent internally;
+ * by providing our own via a custom `fetch` function we ensure concurrent
+ * inference requests open separate connections instead of sharing one.
+ */
+const httpAgent = new HttpKeepAliveAgent({
+  keepAlive: true,
+  maxSockets: 4,
+  timeout: 5 * 60 * 1000,
+});
+const httpsAgent = new HttpsKeepAliveAgent({
+  keepAlive: true,
+  maxSockets: 4,
+  timeout: 5 * 60 * 1000,
+});
 
 export const getModel = () => config.OLLAMA_MODEL;
 export const getContextWindow = () => config.CONTEXT_WINDOW;
-export const getOllamaClient = () => new OpenAI({
-  baseURL: config.OLLAMA_BASE_URL,
-  apiKey: config.OLLAMA_API_KEY,
-  timeout: 120000, // 2 minute timeout
-  maxRetries: 2,
-});
+
+export const getOllamaClient = (): OpenAI => {
+  return new OpenAI({
+    baseURL: config.OLLAMA_BASE_URL,
+    apiKey: config.OLLAMA_API_KEY,
+    timeout: 120000, // 2 minute timeout
+    maxRetries: 2,
+    fetch: (url, init) => {
+      const agent = String(url).startsWith('https') ? httpsAgent : httpAgent;
+      return fetch(url, { ...init, agent });
+    },
+  });
+};
+
+export function formatModelProviderError(error: unknown): string {
+  const rawMessage = error instanceof Error ? error.message : String(error);
+  const normalized = rawMessage.toLowerCase();
+
+  if (
+    normalized.includes('speculativedecoding capability gap')
+    || normalized.includes('predictions do not support native draft-model speculative decoding')
+  ) {
+    return [
+      'Model server configuration error: speculative decoding is enabled with a native draft model,',
+      'but this prediction protocol does not support it.',
+      'Disable the Draft Model / Speculative Decoding setting for the loaded model in LM Studio,',
+      'or switch to a compatible engine/runtime, then retry.',
+    ].join(' ');
+  }
+
+  return rawMessage;
+}
 
 export async function listModels() {
   try {

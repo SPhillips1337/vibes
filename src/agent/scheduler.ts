@@ -4,6 +4,13 @@ import { config } from '../config.js';
 import { log } from '../logger.js';
 import { InterventionManager } from './intervention-manager.js';
 import { getMemoryService } from '../memory/index.js';
+import { runStructuralAudit } from './structural-audit.js';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
+import { existsSync, readFileSync } from 'fs';
+import { join } from 'path';
+
+const execFileAsync = promisify(execFile);
 
 export type InterventionResolution = {
   action: 'retry' | 'skip' | 'fail' | 'reply';
@@ -12,7 +19,10 @@ export type InterventionResolution = {
 };
 
 export class Scheduler {
-  private mission: Mission;
+  private _mission: Mission;
+
+  /** Read-only public accessor — use-mission.ts needs the current mission state during event flush. */
+  get mission(): Mission { return this._mission; }
   private executor: TaskExecutor;
   private onEvent?: OnEvent;
   private runningTasks: Set<string> = new Set();
@@ -26,7 +36,7 @@ export class Scheduler {
   private getYoloMode: () => boolean;
 
   constructor(mission: Mission, executor: TaskExecutor, onEvent?: OnEvent, getYoloMode: () => boolean = () => config.YOLO_MODE) {
-    this.mission = mission;
+    this._mission = mission;
     this.executor = executor;
     this.onEvent = onEvent;
     this.getYoloMode = getYoloMode;
@@ -37,7 +47,7 @@ export class Scheduler {
     this.taskMap.clear();
     this.completedTasks.clear();
     this.failedTasks.clear();
-    for (const milestone of this.mission.milestones) {
+    for (const milestone of this._mission.milestones) {
       for (const task of milestone.tasks) {
         this.taskMap.set(task.id, task);
         if (task.status === 'done') {
@@ -60,10 +70,10 @@ export class Scheduler {
   }
 
   async run() {
-    this.mission.status = 'executing';
+    this._mission.status = 'executing';
     
     while (this.hasPendingTasks()) {
-      const currentStatus = this.mission.status as Mission['status'];
+      const currentStatus = this._mission.status as Mission['status'];
       if (currentStatus === 'awaiting_intervention') {
         await new Promise(resolve => setTimeout(resolve, 200));
         continue;
@@ -92,16 +102,16 @@ export class Scheduler {
       await new Promise(resolve => setTimeout(resolve, 500));
     }
 
-    if (this.mission.status === 'executing' || this.mission.status === 'awaiting_intervention') {
-      this.mission.status = this.failedTasks.size > 0 ? 'failed' : 'completed';
+    if (this._mission.status === 'executing' || this._mission.status === 'awaiting_intervention') {
+      this._mission.status = this.failedTasks.size > 0 ? 'failed' : 'completed';
       
       // Memento Pattern: Persist mission summary into long-term memory
-      if (this.mission.status === 'completed') {
-        const completedTaskTitles = this.mission.milestones.flatMap(m => m.tasks).filter(t => t.status === 'done').map(t => t.title);
-        getMemoryService().addMissionSummary(this.mission.title, completedTaskTitles).catch(e => log(`Failed to save mission memory: ${e}`, 'DEBUG'));
+      if (this._mission.status === 'completed') {
+        const completedTaskTitles = this._mission.milestones.flatMap(m => m.tasks).filter(t => t.status === 'done').map(t => t.title);
+        getMemoryService().addMissionSummary(this._mission.title, completedTaskTitles).catch(e => log(`Failed to save mission memory: ${e}`, 'DEBUG'));
       }
     }
-    return this.mission;
+    return this._mission;
   }
 
   private hasPendingTasks(): boolean {
@@ -130,8 +140,11 @@ export class Scheduler {
     this.onEvent?.({ type: 'task_started', taskId: task.id, title: task.title });
 
     try {
-      const missionContext = `Mission: ${this.mission.title}\nDescription: ${this.mission.description}`;
-      const updatedTask = await this.executor.executeTask(task, missionContext, this.mission.workspace_root, this.onEvent, this.getYoloMode);
+      const stackLine = this._mission.tech_stack && this._mission.tech_stack.length > 0
+        ? `\nTech Stack: ${this._mission.tech_stack.join(', ')}`
+        : '';
+      const missionContext = `Mission: ${this._mission.title}\nDescription: ${this._mission.description}${stackLine}`;
+      const updatedTask = await this.executor.executeTask(task, missionContext, this._mission.workspace_root, this.onEvent, this.getYoloMode, this._mission.tech_stack);
 
       this.updateTaskInMission(updatedTask);
 
@@ -140,10 +153,16 @@ export class Scheduler {
         if (config.ENABLE_REVIEWER && updatedTask.type === 'code') {
           const { Reviewer } = await import('./reviewer.js');
           const reviewer = new Reviewer();
-          const review = await reviewer.reviewTask(updatedTask, this.mission);
+          const review = await reviewer.reviewTask(updatedTask, this._mission);
           
           if (review.approved) {
             log(`Task approved by reviewer: ${updatedTask.title}`, 'INFO');
+
+            // Verification phase — catches orphaned CSS, broken imports, syntax errors, and build failures
+            if (!await this.verifyTask(task, updatedTask)) {
+              return;
+            }
+
             this.completedTasks.add(task.id);
             this.onEvent?.({ type: 'task_completed', taskId: task.id, title: task.title });
           } else {
@@ -171,6 +190,12 @@ export class Scheduler {
           if (config.ENABLE_REVIEWER) {
             log(`Skipping review for non-code task (type=${updatedTask.type}): ${updatedTask.title}`, 'INFO');
           }
+
+          // Verification phase (for non-reviewer path)
+          if (!await this.verifyTask(task, updatedTask)) {
+            return;
+          }
+
           this.completedTasks.add(task.id);
           this.onEvent?.({ type: 'task_completed', taskId: task.id, title: task.title });
         }
@@ -188,7 +213,7 @@ export class Scheduler {
   }
 
   private async handleTaskFailure(task: Task) {
-    this.mission.status = 'awaiting_intervention';
+    this._mission.status = 'awaiting_intervention';
     log(`Task failed, requesting intervention for: ${task.title}`, 'WARN');
 
     // Notify listeners about task failure
@@ -201,7 +226,7 @@ export class Scheduler {
 
     // Formulate the question (with timeout fallback)
     const question = await this.interventionManager.formulateInterventionQuestion(
-      task, this.mission, task.error || 'Unknown error'
+      task, this._mission, task.error || 'Unknown error'
     );
 
     // Wait for the user's response via a Promise
@@ -219,7 +244,7 @@ export class Scheduler {
 
     // Apply the resolution directly to the task in our own taskMap
     if (resolution.action === 'fail') {
-      this.mission.status = 'failed';
+      this._mission.status = 'failed';
       this.failedTasks.add(task.id);
       this.markDependentsFailed(task.id);
       return;
@@ -231,14 +256,14 @@ export class Scheduler {
       this.completedTasks.add(task.id);
       this.onEvent?.({ type: 'task_completed', taskId: task.id, title: task.title });
       this.updateTaskInMission(task);
-      this.mission.status = 'executing';
+      this._mission.status = 'executing';
       return;
     }
 
     // retry or reply — reset target task and all subsequent tasks to todo
     let targetTaskId = resolution.retryFromTaskId || task.id;
     let resetActive = false;
-    for (const milestone of this.mission.milestones) {
+    for (const milestone of this._mission.milestones) {
       for (const t of milestone.tasks) {
         if (t.id === targetTaskId) {
           resetActive = true;
@@ -273,10 +298,46 @@ export class Scheduler {
     }
 
     this.updateTaskInMission(task);
-    this.mission.status = 'executing';
+    this._mission.status = 'executing';
 
     // Notify the TUI that steps changed so the footer can update
     this.onEvent?.({ type: 'steps_updated', taskId: task.id, extraSteps: task.extraSteps });
+  }
+
+  private async verifyTask(task: Task, updatedTask: Task): Promise<boolean> {
+    let auditIssuesMessage = '';
+    let auditIssuesList: any[] = [];
+
+    if (updatedTask.files.length > 0) {
+      if (config.ENABLE_STRUCTURAL_AUDIT) {
+        const auditIssues = runStructuralAudit(this._mission.workspace_root, updatedTask.files);
+        if (auditIssues.length > 0) {
+          auditIssuesList = auditIssues;
+          auditIssuesMessage = `Structural audit found issues:\n${auditIssues.map(i => `- [${i.type}] ${i.file}: ${i.message}`).join('\n')}\n\n`;
+        }
+      }
+
+      const buildErrors = await runBuildCheck(this._mission.workspace_root);
+      if (buildErrors.length > 0) {
+        auditIssuesMessage += `Build compilation failed with errors:\n${buildErrors.map(e => `- ${e}`).join('\n')}\n\n`;
+      }
+    }
+
+    if (auditIssuesMessage) {
+      log(`Verification failed for task: ${updatedTask.title}`, 'WARN');
+      updatedTask.auditIssues = auditIssuesList.length > 0 ? auditIssuesList : undefined;
+      updatedTask.status = 'todo';
+      updatedTask.error = undefined;
+      updatedTask.output = undefined;
+      updatedTask.userGuidance = `${auditIssuesMessage}Fix all structural and build compilation issues before completing the task.`;
+      updatedTask.extraSteps = (updatedTask.extraSteps || 0) + 10;
+      this.completedTasks.delete(task.id);
+      this.taskMap.set(task.id, updatedTask);
+      this.runningTasks.delete(task.id);
+      return false;
+    }
+
+    return true;
   }
 
   private markDependentsFailed(failedTaskId: string) {
@@ -291,7 +352,7 @@ export class Scheduler {
   }
 
   private updateTaskInMission(updatedTask: Task) {
-    for (const milestone of this.mission.milestones) {
+    for (const milestone of this._mission.milestones) {
       const index = milestone.tasks.findIndex(t => t.id === updatedTask.id);
       if (index !== -1) {
         milestone.tasks[index] = updatedTask;
@@ -302,10 +363,38 @@ export class Scheduler {
   }
 
   public addTask(milestoneId: string, newTask: Task) {
-    const milestone = this.mission.milestones.find(m => m.id === milestoneId);
+    const milestone = this._mission.milestones.find(m => m.id === milestoneId);
     if (milestone) {
       milestone.tasks.push(newTask);
       this.taskMap.set(newTask.id, newTask);
     }
+  }
+}
+
+// Async build check — uses execFileAsync instead of execSync so the TypeScript
+// compile does not block the Node.js event loop (and freeze the TUI) for its
+// full duration, which can be several seconds on a large project.
+async function runBuildCheck(workspaceRoot: string): Promise<string[]> {
+  try {
+    const pkgPath = join(workspaceRoot, 'package.json');
+    if (!existsSync(pkgPath)) return [];
+
+    const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'));
+    if (!pkg.scripts || !pkg.scripts.build) return [];
+
+    log('Running workspace build verification check...', 'INFO');
+    await execFileAsync('npm', ['run', 'build'], { cwd: workspaceRoot });
+    return [];
+  } catch (error: any) {
+    const stdout = error.stdout ? String(error.stdout) : '';
+    const stderr = error.stderr ? String(error.stderr) : '';
+    const output = `${stdout}\n${stderr}`;
+
+    const errorLines = output
+      .split('\n')
+      .map(line => line.trim())
+      .filter(line => line.includes('error TS') || line.includes('Error:') || line.includes('Failed to compile') || line.includes('ValidationError'));
+
+    return errorLines.length > 0 ? errorLines.slice(0, 8) : [error.message || 'Build compilation check failed'];
   }
 }

@@ -1,6 +1,8 @@
+#!/usr/bin/env node
+
 import React from 'react';
 import { render, Box, Text, useInput, useApp } from 'ink';
-import { TextInput } from '@inkjs/ui';
+import { EnhancedTextInput } from './tui/components/enhanced-text-input.js';
 import { useMission } from './tui/hooks/use-mission.js';
 import { useUpdateCheck } from './tui/hooks/use-update-check.js';
 import { useSettings } from './tui/hooks/use-settings.js';
@@ -14,6 +16,7 @@ import { InterventionView } from './tui/components/intervention-view.js';
 import { LogStreamView } from './tui/components/log-stream-view.js';
 import { UpdateNotification } from './tui/components/update-notification.js';
 import { initLogger } from './logger.js';
+import { hasPersistentConfig } from './config.js';
 import path from 'path';
 
 const App = () => {
@@ -33,9 +36,12 @@ const App = () => {
   } = useUpdateCheck();
 
   const { settings, availableModels, saveSettings } = useSettings();
+  const closeSettings = React.useCallback(() => setView('dashboard'), []);
 
   const [workspace, setWorkspace] = React.useState(process.env.VIBES_LAUNCH_DIR || process.cwd());
-  const [view, setView] = React.useState<'dashboard' | 'mission' | 'task' | 'trace' | 'settings' | 'history' | 'log'>('dashboard');
+  const [view, setView] = React.useState<'dashboard' | 'mission' | 'task' | 'trace' | 'settings' | 'history' | 'log'>(
+    hasPersistentConfig() ? 'dashboard' : 'settings'
+  );
   const [focusIndex, setFocusIndex] = React.useState(0);
   const [isCodexEnabled, setIsCodexEnabled] = React.useState(settings.CODEX_ENABLED);
 
@@ -87,10 +93,18 @@ const App = () => {
     }
 
     // Suppress other global shortcuts while typing in a text field
-    const isTyping = isIdle && view === 'dashboard'; 
+    const isTyping = (isIdle && view === 'dashboard') || view === 'settings'; 
     if (isTyping) {
-      if (key.tab) setFocusIndex(prev => (prev === 0 ? 1 : 0));
+      if (key.tab && !key.shift) setFocusIndex(prev => (prev === 0 ? 1 : 0));
+      if (key.tab && key.shift) setFocusIndex(prev => (prev === 1 ? 0 : 1));
       return; 
+    }
+
+    // Home/End key navigation (only when not typing in text fields or scrolling logs)
+    const canUseHomeEndForNav = !isIdle && view !== 'log' && view !== 'trace';
+    if (canUseHomeEndForNav) {
+      if (key.home) { setView('dashboard'); return; }
+      if (key.end) { setView('log'); return; }
     }
 
     if (view === 'history') {
@@ -110,6 +124,8 @@ const App = () => {
       return;
     }
   });
+
+
 
   const handleSubmit = (val: string) => {
     if (val.trim()) {
@@ -165,7 +181,11 @@ const App = () => {
             <Text color="red" bold>Error Detected:</Text>
             <Text color="red">{error.length > 500 ? error.slice(0, 500) + '...' : error}</Text>
             <Box marginTop={1}>
-              <Text color="gray" dimColor>The model may have produced malformed output. Try a more specific description.</Text>
+              <Text color="gray" dimColor>
+                {error.toLowerCase().includes('speculative decoding')
+                  ? 'This is a model-server capability mismatch, not malformed model output.'
+                  : 'The model may have produced malformed output. Try a more specific description.'}
+              </Text>
             </Box>
           </Box>
         )}
@@ -193,7 +213,7 @@ const App = () => {
             settings={settings}
             availableModels={availableModels}
             onSave={saveSettings}
-            onClose={() => setView('dashboard')}
+            onClose={closeSettings}
           />
         )}
 
@@ -264,7 +284,7 @@ const App = () => {
               </Box>
               <Box borderStyle="single" borderColor={focusIndex === 0 ? 'cyan' : 'gray'} paddingX={1}>
                 {focusIndex === 0 ? (
-                  <TextInput
+                  <EnhancedTextInput
                     defaultValue={workspace}
                     onChange={setWorkspace}
                     onSubmit={() => setFocusIndex(1)}
@@ -283,7 +303,7 @@ const App = () => {
               </Box>
               <Box borderStyle="single" borderColor={focusIndex === 1 ? 'green' : 'gray'} paddingX={1}>
                 {focusIndex === 1 ? (
-                  <TextInput
+                  <EnhancedTextInput
                     placeholder="e.g. Add a dark mode toggle to the settings panel"
                     onSubmit={handleSubmit}
                   />
@@ -340,4 +360,5 @@ const App = () => {
   );
 };
 
+process.stdout.write('\x1Bc');
 render(<App />);
