@@ -16,6 +16,7 @@ import { InterventionView } from './tui/components/intervention-view.js';
 import { LogStreamView } from './tui/components/log-stream-view.js';
 import { UpdateNotification } from './tui/components/update-notification.js';
 import { initLogger } from './logger.js';
+import { hasPersistentConfig } from './config.js';
 import path from 'path';
 
 const App = () => {
@@ -38,7 +39,9 @@ const App = () => {
   const closeSettings = React.useCallback(() => setView('dashboard'), []);
 
   const [workspace, setWorkspace] = React.useState(process.env.VIBES_LAUNCH_DIR || process.cwd());
-  const [view, setView] = React.useState<'dashboard' | 'mission' | 'task' | 'trace' | 'settings' | 'history' | 'log'>('dashboard');
+  const [view, setView] = React.useState<'dashboard' | 'mission' | 'task' | 'trace' | 'settings' | 'history' | 'log'>(
+    hasPersistentConfig() ? 'dashboard' : 'settings'
+  );
   const [focusIndex, setFocusIndex] = React.useState(0);
   const [isCodexEnabled, setIsCodexEnabled] = React.useState(settings.CODEX_ENABLED);
 

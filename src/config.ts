@@ -73,6 +73,10 @@ if (!finalParsed.success) {
 // copies will hold stale values for the lifetime of the module.
 export const config: Config = finalParsed.data;
 
+export function hasPersistentConfig(): boolean {
+  return fs.existsSync(CONFIG_PATH);
+}
+
 export function updateConfig(newConfig: Partial<Config>) {
   try {
     if (!fs.existsSync(VIBES_DIR)) {
