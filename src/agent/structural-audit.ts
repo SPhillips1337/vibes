@@ -105,6 +105,12 @@ function getDefinitionBraceDepth(content: string, identifier: string): number | 
     if (inTmpl) {
       if (ch === '`') {
         inTmpl = false;
+        // Restore the brace depth saved when this template literal began.
+        // Without this, any depth pushed onto templateBraces before the opening
+        // backtick is orphaned and causes a false "Unclosed braces" report.
+        if (templateBraces.length > 0) {
+          braceDepth += templateBraces.pop()!;
+        }
       } else if (ch === '$' && nextCh === '{') {
         templateBraces.push(braceDepth);
         braceDepth = 0;
@@ -263,6 +269,12 @@ export function runStructuralAudit(workspaceRoot: string, taskFiles: string[]): 
         if (inTmpl) {
           if (ch === '`') {
             inTmpl = false;
+            // Restore the brace depth saved when this template literal began.
+            // Without this, any depth pushed onto templateBraces before the opening
+            // backtick is orphaned and causes a false "Unclosed braces" report.
+            if (templateBraces.length > 0) {
+              braceDepth += templateBraces.pop()!;
+            }
           } else if (ch === '$' && nextCh === '{') {
             templateBraces.push(braceDepth);
             braceDepth = 0;

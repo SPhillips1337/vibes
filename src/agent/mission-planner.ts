@@ -111,12 +111,24 @@ Constraints:
       max_tokens: 4096,
     });
 
-    let content = response.choices[0]?.message?.content;
-    logObject('Planner Raw Response', content);
+    const message = response.choices[0]?.message as any;
+    // Reasoning models (phi-4-mini-reasoning, DeepSeek-R1, Gemma-QAT, etc.)
+    // emit their output in `reasoning_content` or `reasoning` with empty `content`.
+    let content: string | null | undefined =
+      message?.content
+      || message?.reasoning_content
+      || message?.reasoning;
+
+    logObject('Planner Raw Response', message);
 
     if (!content) {
-      throw new Error('Failed to get response from mission planner');
+      const presentKeys = Object.keys(message ?? {}).join(', ');
+      throw new Error(
+        `Failed to get response from mission planner — model returned no usable content. ` +
+        `Present keys: [${presentKeys}]. Finish reason: ${response.choices[0]?.finish_reason ?? 'unknown'}.`
+      );
     }
+    content = content as string;
 
     // Strip reasoning blocks before attempting any JSON parse.
     // Reasoning models (DeepSeek-R1, Qwen-QwQ, etc.) prepend <think>...</think>
@@ -125,21 +137,69 @@ Constraints:
     log(`Planner content after think-strip (first 120 chars): ${content.slice(0, 120)}`, 'DEBUG');
 
     let rawPlan;
-    try {
-      rawPlan = JSON.parse(content);
-    } catch (e) {
-      log('Initial JSON parse failed, attempting repair...', 'WARN');
+    // Retry once with a more forceful prompt if the model returns no JSON at all
+    for (let attempt = 0; attempt < 2; attempt++) {
       try {
-        const repaired = repairJson(content);
-        logObject('Repaired JSON', repaired);
-        rawPlan = JSON.parse(repaired);
+        // First attempt already has content; retry must make a new API call
+        if (attempt === 1) {
+          log('Retrying planner with stronger JSON-only prompt...', 'WARN');
+          const retryResponse = await getOllamaClient().chat.completions.create({
+            model: plannerModel,
+            messages: [
+              { role: 'system', content: systemPrompt },
+              { role: 'assistant', content: content },
+              { role: 'user', content: `Your previous response was not valid JSON. Output ONLY a raw JSON object, no markdown, no explanation, no thinking tags.\n\nPlease plan a mission for:\n\n${description}` },
+            ],
+            temperature: 0.1,
+            max_tokens: 4096,
+          });
+          const retryMsg = retryResponse.choices[0]?.message as any;
+          content = extractJsonContent(
+            (retryMsg?.content || retryMsg?.reasoning_content || retryMsg?.reasoning || content) as string
+          );
+        }
+
+        try {
+          rawPlan = JSON.parse(content);
+        } catch (e) {
+          log('Initial JSON parse failed, attempting repair...', 'WARN');
+          const repaired = repairJson(content);
+          if (repaired === null) {
+            throw new Error(`Model returned no JSON content. Raw: ${content.slice(0, 100)}...`);
+          }
+          logObject('Repaired JSON', repaired);
+          rawPlan = JSON.parse(repaired);
+        }
+        break; // success
       } catch (err: any) {
-        log(`JSON Repair failed: ${err.message}`, 'ERROR');
-        throw new Error(`Invalid JSON from model: ${err.message}\nRaw content: ${content.slice(0, 100)}...`);
+        if (attempt === 1) {
+          log(`JSON parse failed after retry: ${err.message}`, 'ERROR');
+          throw new Error(`Invalid JSON from model: ${err.message}\nRaw content: ${content.slice(0, 100)}...`);
+        }
+        log(`JSON parse failed (attempt ${attempt + 1}): ${err.message}`, 'WARN');
       }
     }
 
     try {
+      // Unwrap common model mis-wrappings:
+      //   { "plan": { "milestones": [...] } }
+      //   { "mission": { "milestones": [...] } }
+      //   [ { "milestones": [...] } ]  (array-wrapped)
+      if (rawPlan && !Array.isArray(rawPlan.milestones)) {
+        const inner = rawPlan.plan ?? rawPlan.mission ?? rawPlan.result ?? rawPlan.output;
+        if (inner && Array.isArray(inner.milestones)) {
+          rawPlan = inner;
+        }
+      }
+
+      if (!rawPlan || !Array.isArray(rawPlan.milestones)) {
+        throw new Error(
+          `Model returned JSON without a "milestones" array. ` +
+          `Got top-level keys: [${Object.keys(rawPlan ?? {}).join(', ')}]. ` +
+          `Raw (first 200 chars): ${content.slice(0, 200)}`
+        );
+      }
+
       // 1. Assign a unique ID to every task and build a mapping of normalized title -> ID
       const taskTitleToIdMap = new Map<string, string>();
       const taskList: any[] = [];
@@ -192,13 +252,17 @@ Constraints:
       for (let i = 1; i < rawPlan.milestones.length; i++) {
         const prevMilestone = rawPlan.milestones[i - 1];
         const currentMilestone = rawPlan.milestones[i];
-        const prevMilestoneTaskIds = prevMilestone.tasks.map((t: any) => t.id);
+        const prevMilestoneTaskIds = Array.isArray(prevMilestone.tasks)
+          ? prevMilestone.tasks.map((t: any) => t.id)
+          : [];
 
-        currentMilestone.tasks.forEach((t: any) => {
-          if (!t.depends_on || t.depends_on.length === 0) {
-            t.depends_on = [...prevMilestoneTaskIds];
-          }
-        });
+        if (Array.isArray(currentMilestone.tasks)) {
+          currentMilestone.tasks.forEach((t: any) => {
+            if (!t.depends_on || t.depends_on.length === 0) {
+              t.depends_on = [...prevMilestoneTaskIds];
+            }
+          });
+        }
       }
 
       // Assemble final mission plan
@@ -212,12 +276,12 @@ Constraints:
           ...m,
           id: m.id || uuidv4(),
           description: m.description || m.title || '',
-          tasks: m.tasks.map((t: any) => ({
+          tasks: Array.isArray(m.tasks) ? m.tasks.map((t: any) => ({
             ...t,
             type: ['code', 'config', 'research', 'unknown'].includes(t.type) ? t.type : 'code',
             status: 'todo',
             depends_on: t.depends_on || [],
-          })),
+          })) : [],
         })),
       };
 

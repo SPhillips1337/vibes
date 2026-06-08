@@ -41,14 +41,15 @@ export function extractJsonContent(text: string): string {
 
 /**
  * Extract JSON object from text that may contain preamble (thinking tokens, etc.)
- * Internal helper used by repairJson.
+ * Internal helper used by repairJson.  Returns null when no JSON object/array
+ * root delimiter is found.
  */
-function extractJson(text: string): string {
+function extractJson(text: string): string | null {
   let trimmed = extractJsonContent(text);
 
   // Try to find a complete JSON object: first '{' to matching '}'
   const start = trimmed.indexOf('{');
-  if (start === -1) return trimmed;
+  if (start === -1) return null;
 
   let depth = 0;
   let inStr = false;
@@ -72,8 +73,11 @@ function extractJson(text: string): string {
 /**
  * Attempts to repair common JSON errors from LLMs
  */
-export function repairJson(json: string): string {
-  let repaired = extractJson(json);
+export function repairJson(json: string): string | null {
+  const extracted = extractJson(json);
+  if (extracted === null) return null;
+
+  let repaired = extracted;
 
   // Remove any markdown code blocks
   if (repaired.includes('```')) {
@@ -117,11 +121,6 @@ export function repairJson(json: string): string {
 
   repaired = result;
 
-  // Ensure it starts and ends with braces — but only if it doesn't look like
-  // a JSON array already (arrays start with '[').  Prepending '{' to an array
-  // would produce invalid JSON like `{[...]}` and corrupt array responses.
-  if (!repaired.startsWith('{') && !repaired.startsWith('[')) repaired = '{' + repaired;
-  
   // Count braces to find missing closures
   let openBraces = 0;
   let openBrackets = 0;

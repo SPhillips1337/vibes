@@ -198,9 +198,17 @@
 - **Files:** `src/memory/memory-service.ts`, `src/memory/local-memory.ts`
 - **Commit:** `fix: bound memory prompt injection by token budget`
 
-### 28. npm CLI Packaging Boundaries
-- **Lesson:** A globally installed workspace-aware CLI must separate its package installation root from the user's launch directory. Git-based self-update commands using `process.cwd()` can mutate the user's project, and broad package file globs can publish stale artifacts containing local paths or personal metadata.
-- **Fix:** Publish `vibes-tui` with a dedicated `vibes` bootstrap binary, an explicit compiled-JavaScript allowlist, source-checkout-only Git updates rooted from `import.meta.url`, and a `prepack` build. Keep optional remote-memory SDKs out of the default runtime dependency graph using an optional peer plus dynamic import; local memory remains dependency-free.
-- **Files:** `package.json`, `src/vibes-cli.ts`, `src/tui/hooks/use-update-check.ts`, `src/memory/memory-service.ts`, `README.md`
-- **Commit:** `feat: package Vibes as the vibes-tui npm CLI`
+### 29. Structural Audit False Positive: JSX Template Literal Brace Counting
 
+- **Lesson:** The character-level brace scanner in `structural-audit.ts` pushes `braceDepth` onto `templateBraces` when entering `${}` inside a template literal, but **never pops it when the closing backtick exits `inTmpl`**. Files with `` className={`foo ${variable}`} `` are falsely reported as "Unclosed braces (depth: 1)", causing the agent loop to spiral (repeated list_dir, tsc hunts, 3,900+ reasoning tokens trying to parse the same line mentally).
+- **Root Cause:** The triad for template literal brace tracking is: **push on `${`**, **pop on closing `}`**, **and pop on closing backtick**. The third step was missing.
+- **Fix:** When `inTmpl` closes (backtick encountered), restore depth: `if (templateBraces.length > 0) braceDepth += templateBraces.pop()!;` — applied in **both** `getDefinitionBraceDepth()` and `runStructuralAudit()`.
+- **Never Again:** Any character-level brace counter that tracks template literals MUST restore depth on backtick close, not just on `${}` close.
+- **Files:** `src/agent/structural-audit.ts`
+
+### 30. OpenAI Client Factory vs Singleton
+
+- **Lesson:** `getOllamaClient() = () => new OpenAI(...)` is a factory — every call creates a fresh `undici` dispatcher with an isolated connection pool. When concurrent tasks share the same LLM host, this means N separate pools each maintaining their own TCP connections instead of sharing one.
+- **Fix:** Convert to a config-aware singleton that caches the client and only re-creates when `OLLAMA_BASE_URL` or `OLLAMA_API_KEY` changes (to support live `updateConfig()` from the settings TUI). A shared singleton enables HTTP Keep-Alive reuse across all agent steps and concurrent tasks.
+- **Note:** Per-step sequential LLM calls within a single `TaskExecutor` loop are correct by design. Parallelism is at the *task* level via `MAX_CONCURRENT_TASKS` in the Scheduler.
+- **Files:** `src/ollama-client.ts`

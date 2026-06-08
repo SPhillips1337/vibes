@@ -1,12 +1,14 @@
 {
-  "OLLAMA_MODEL": "qwen3.5-9b-deepseek-v4-flash",
-  "PLANNER_MODEL": "microsoft/phi-4-mini-reasoning",
-  "CONTEXT_WINDOW": 125000,
+  "OLLAMA_MODEL": "google/gemma-4-12b-qat",
+  "PLANNER_MODEL": "google/gemma-4-12b-qat",
+  "CONTEXT_WINDOW": 32000,
   "ENABLE_REVIEWER": true,
-  "MAX_CONCURRENT_TASKS": 2,
-  "MEMORY_ENABLED": false,
+  "MAX_CONCURRENT_TASKS": 4,
+  "MEMORY_ENABLED": true,
   "CODEX_ENABLED": true,
   "CODEX_TOP_K": 3,
-  "REVIEWER_MODEL": "qwen3.5-9b-deepseek-v4-flash",
-  "THINKING_MODE": true
+  "REVIEWER_MODEL": "google/gemma-4-12b-qat",
+  "THINKING_MODE": true,
+  "MAX_STEPS": 100,
+  "MEMORY_USER_ID": "test17"
 }
