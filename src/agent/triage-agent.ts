@@ -50,10 +50,16 @@ const TRIAGE_FUNCTION_SCHEMA = {
 };
 
 const THRASH_TOOL_FAIL_THRESHOLD = 3;
+const LOOP_SAME_TOOL_THRESHOLD = 4;
 const CONTEXT_HIGH_PRESSURE = 0.9;
 const CONTEXT_READINGS_BEFORE_FLAG = 3;
 const TURN_EXHAUSTION_RATIO = 0.8;
 const LOG_ERROR_THRESHOLD = 3;
+
+const GUIDANCE_TOOL_FAIL = `You have called the same tool multiple times and it keeps failing. Try a different approach or tool instead of retrying the same thing.`;
+const GUIDANCE_TOOL_LOOP = `You are repeating the same tool call without making progress. Step back and try a different strategy.`;
+const GUIDANCE_CONTEXT_PRESSURE = `Context window is getting full. Consider completing the current subtask and providing a summary rather than starting new work.`;
+const GUIDANCE_TURN_EXHAUSTION = `You are approaching the step limit. Wrap up the current task with whatever you have.`;
 
 interface TriageSnapshot {
   toolFailures: Map<string, number>;
@@ -66,6 +72,12 @@ interface TriageSnapshot {
 export class TriageAgent {
   /** Set by the scheduler before each task execution. Hooks read this to tag snapshots. */
   currentTaskId = '';
+
+  /** Pending steering message for live mid-task injection. Cleared after read. */
+  pendingSteerMessage = '';
+
+  /** Last N tool calls (name only) for loop detection. */
+  private recentToolCalls: string[] = [];
 
   private snapshots = new Map<string, TriageSnapshot>();
   private taskIndex = 0;
@@ -83,6 +95,13 @@ export class TriageAgent {
       maxSteps: config.MAX_STEPS,
       errorLogCount: 0,
     });
+    this.recentToolCalls = [];
+    this.pendingSteerMessage = '';
+  }
+
+  recordToolCall(toolName: string) {
+    this.recentToolCalls.push(toolName);
+    if (this.recentToolCalls.length > 12) this.recentToolCalls.shift();
   }
 
   recordToolFailure(taskId: string, toolName: string) {
@@ -109,6 +128,54 @@ export class TriageAgent {
     const snap = this.snapshots.get(taskId);
     if (!snap) return;
     snap.errorLogCount++;
+  }
+
+  /** Tier 1 live check — runs after each tool turn, no LLM call.
+   *  Sets `pendingSteerMessage` if a pattern is detected. */
+  checkLive(taskId: string): void {
+    if (!this.autoSteer) return;
+    const snap = this.snapshots.get(taskId);
+    if (!snap) return;
+
+    // Already have a pending message — don't overwrite until consumed
+    if (this.pendingSteerMessage) return;
+
+    // 1. Consecutive tool failures
+    for (const [tool, count] of snap.toolFailures) {
+      if (count >= THRASH_TOOL_FAIL_THRESHOLD) {
+        this.pendingSteerMessage = `${GUIDANCE_TOOL_FAIL} (${tool} failed ${count}x)`;
+        log(`Triage live: tool failure thrash (${tool} ${count}x)`, 'WARN');
+        return;
+      }
+    }
+
+    // 2. Same tool called repeatedly (loop detection)
+    if (this.recentToolCalls.length >= LOOP_SAME_TOOL_THRESHOLD) {
+      const last = this.recentToolCalls.slice(-LOOP_SAME_TOOL_THRESHOLD);
+      if (last.every(t => t === last[0])) {
+        this.pendingSteerMessage = `${GUIDANCE_TOOL_LOOP} (${last[0]} called ${LOOP_SAME_TOOL_THRESHOLD}x in a row)`;
+        log(`Triage live: tool loop (${last[0]} repeated)`, 'WARN');
+        return;
+      }
+    }
+
+    // 3. Context pressure spike
+    if (snap.contextReadings.length >= 2) {
+      const last = snap.contextReadings[snap.contextReadings.length - 1];
+      if (last.used / last.total > CONTEXT_HIGH_PRESSURE) {
+        this.pendingSteerMessage = GUIDANCE_CONTEXT_PRESSURE;
+        log(`Triage live: context pressure ${(last.used / last.total * 100).toFixed(0)}%`, 'WARN');
+        return;
+      }
+    }
+
+    // 4. Turn exhaustion
+    const turnRatio = snap.turnCount / Math.max(snap.maxSteps, 1);
+    if (turnRatio >= TURN_EXHAUSTION_RATIO) {
+      this.pendingSteerMessage = GUIDANCE_TURN_EXHAUSTION;
+      log(`Triage live: turn exhaustion ${(turnRatio * 100).toFixed(0)}%`, 'WARN');
+      return;
+    }
   }
 
   async analyzeBetweenTasks(): Promise<TriageAction> {
@@ -250,6 +317,7 @@ export function withTriageHooks(
     async afterToolCall(ctx: AfterToolCallContext) {
       const baseResult = await baseHooks.afterToolCall?.(ctx);
       const toolName = (ctx.toolCall as any)?.function?.name || 'unknown';
+      triage.recordToolCall(toolName);
       if (triage.currentTaskId && !ctx.result?.success) {
         triage.recordToolFailure(triage.currentTaskId, toolName);
       }
@@ -259,8 +327,20 @@ export function withTriageHooks(
     async shouldStopAfterTurn(ctx: ShouldStopAfterTurnContext) {
       const baseResult = await baseHooks.shouldStopAfterTurn?.(ctx);
       if (baseResult) return true;
-      if (triage.currentTaskId) triage.recordTurn(triage.currentTaskId);
+      if (triage.currentTaskId) {
+        triage.recordTurn(triage.currentTaskId);
+        triage.checkLive(triage.currentTaskId);
+      }
       return false;
+    },
+
+    async getSteeringMessage() {
+      const msg = triage.pendingSteerMessage;
+      if (msg) {
+        triage.pendingSteerMessage = '';
+        return msg;
+      }
+      return null;
     },
 
     async transformContext(ctx: TransformContextContext) {

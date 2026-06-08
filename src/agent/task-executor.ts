@@ -400,6 +400,13 @@ ${memoriesSection}`;
         log(`Context usage: ~${stats.used}/${stats.usable} tokens (${stats.percentage}%) [step ${step + 1}/${currentMax}]`, 'DEBUG');
         onEvent?.({ type: 'context_update', used: stats.used, total: stats.total, percentage: stats.percentage });
 
+        // Steering: inject live triage guidance before this turn
+        const steerMsg = await this.hooks?.getSteeringMessage?.();
+        if (steerMsg) {
+          log(`Injecting live steering: ${steerMsg.slice(0, 80)}...`, 'INFO');
+          messages.push({ role: 'user', content: `[TRIAGE]: ${steerMsg}` });
+        }
+
         // LLM call
         const taskModel = task.use_reviewer_model && config.ENABLE_REVIEWER ? config.REVIEWER_MODEL : getModel();
         log(`Using model: ${taskModel} ${task.use_reviewer_model ? '(Reviewer model requested)' : ''}`, 'DEBUG');

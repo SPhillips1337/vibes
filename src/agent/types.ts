@@ -187,6 +187,12 @@ export interface AgentLoopHooks {
   transformContext?: (ctx: TransformContextContext) => Promise<ChatCompletionMessageParam[]>;
 
   /**
+   * Inject live steering into the message stream. Called before each LLM
+   * turn. Return a string to inject as a user message, or null for no-op.
+   */
+  getSteeringMessage?: () => Promise<string | null>;
+
+  /**
    * Inject mid-run messages (steering). Called after each turn completes,
    * before the next LLM call. Return `[]` when nothing to inject.
    */
