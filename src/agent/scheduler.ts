@@ -110,16 +110,6 @@ export class Scheduler {
         }
       }
 
-      // Triage: between-task analysis
-      if (this.triageAgent) {
-        try {
-          const action = await this.triageAgent.analyzeBetweenTasks();
-          await this.handleTriageAction(action);
-        } catch (err: any) {
-          log(`Triage analysis error: ${err.message}`, 'WARN');
-        }
-      }
-
       await new Promise(resolve => setTimeout(resolve, 500));
     }
 
@@ -151,6 +141,16 @@ export class Scheduler {
 
   private getAllTasks(): Task[] {
     return Array.from(this.taskMap.values());
+  }
+
+  private async runTriageAnalysis() {
+    if (!this.triageAgent) return;
+    try {
+      const action = await this.triageAgent.analyzeBetweenTasks();
+      await this.handleTriageAction(action);
+    } catch (err: any) {
+      log(`Triage analysis error: ${err.message}`, 'WARN');
+    }
   }
 
   private async handleTriageAction(action: TriageAction) {
@@ -212,6 +212,7 @@ export class Scheduler {
 
             this.completedTasks.add(task.id);
             this.onEvent?.({ type: 'task_completed', taskId: task.id, title: task.title });
+            await this.runTriageAnalysis();
           } else {
             log(`Task REJECTED by reviewer: ${updatedTask.title}. Feedback: ${review.feedback}`, 'WARN');
             if (!updatedTask.userGuidance) {
@@ -245,6 +246,7 @@ export class Scheduler {
 
           this.completedTasks.add(task.id);
           this.onEvent?.({ type: 'task_completed', taskId: task.id, title: task.title });
+          await this.runTriageAnalysis();
         }
       } else {
         await this.handleTaskFailure(updatedTask);

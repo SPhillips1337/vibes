@@ -80,7 +80,7 @@ export class TriageAgent {
   private recentToolCalls: string[] = [];
 
   private snapshots = new Map<string, TriageSnapshot>();
-  private taskIndex = 0;
+  private completedTaskCount = 0;
   private autoSteer: boolean;
 
   constructor(autoSteer: boolean) {
@@ -179,10 +179,9 @@ export class TriageAgent {
   }
 
   async analyzeBetweenTasks(): Promise<TriageAction> {
-    if (this.snapshots.size === 0) return { type: 'continue' };
-
-    this.taskIndex++;
-    if (this.taskIndex % config.TRIAGE_INTERVAL !== 0) return { type: 'continue' };
+    this.completedTaskCount++;
+    const shouldAnalyze = this.completedTaskCount % config.TRIAGE_INTERVAL === 0;
+    if (!shouldAnalyze || this.snapshots.size === 0) return { type: 'continue' };
 
     let totalToolFailures = 0;
     let maxConsecutiveFailures = 0;
@@ -214,16 +213,18 @@ export class TriageAgent {
     const hasTurnExhaustion = maxTurnRatio >= TURN_EXHAUSTION_RATIO;
     const hasLogErrors = totalLogErrors >= LOG_ERROR_THRESHOLD;
 
+    // Always clear snapshots so each analysis is a fresh window
+    this.snapshots.clear();
+
     if (!hasToolThrash && !hasTurnExhaustion && !hasLogErrors) {
       if (hasHighPressure) {
         log('Triage: high context pressure detected, forcing compaction', 'INFO');
-        return { type: 'compress', reason: `Context at ${(avgPressure * 100).toFixed(0)}% across ${this.snapshots.size} tasks` };
+        return { type: 'compress', reason: `Context at ${(avgPressure * 100).toFixed(0)}%` };
       }
       return { type: 'continue' };
     }
 
     const contextLines: string[] = [];
-    contextLines.push(`Tasks analysed: ${this.snapshots.size}`);
     contextLines.push(`Worst tool failure: ${worstTool} failed ${maxConsecutiveFailures}x consecutively`);
     contextLines.push(`Context pressure: ${(avgPressure * 100).toFixed(0)}% (${pressureReadings} readings)`);
     contextLines.push(`Turn exhaustion: ${(maxTurnRatio * 100).toFixed(0)}% of max steps`);
