@@ -377,7 +377,16 @@ ${memoriesSection}`;
         // Fix 1: Hard cap by message count — force compaction regardless of token budget.
         // Prevents unbounded JS heap growth when many steps with small outputs accumulate.
         // MSG_HARD_CAP of 150 retains head (2) + summary + ample tail while bounding the array.
-        const MSG_HARD_CAP = 150;
+        /** Format a tool result for the LLM message stream.
+ *  String data → plain text (preserves actual newlines).
+ *  Structured data → JSON (fallback for arrays/objects). */
+function formatToolResult(result: ToolResult): string {
+  if (!result.success) return `Error: ${result.error}`;
+  if (typeof result.data === 'string') return result.data;
+  return JSON.stringify(result);
+}
+
+const MSG_HARD_CAP = 150;
         if (messages.length > MSG_HARD_CAP) {
           log(`Message hard-cap hit (${messages.length} msgs): forcing compaction`, 'WARN');
           messages = compressMessages(messages, true);
@@ -621,9 +630,10 @@ ${memoriesSection}`;
                 const entry   = preflight[i];
                 const result  = results as ToolResult[];
 
-                onEvent?.({ type: 'tool_result', tool: entry.toolCall.function.name, result: result[i] });
-                logObject(`Tool Result [${entry.toolCall.function.name}] (parallel, ${elapsedMs} ms total)`, result[i]);
-                const resultStr = JSON.stringify(result[i]);
+                const r = result[i];
+                onEvent?.({ type: 'tool_result', tool: entry.toolCall.function.name, result: r });
+                logObject(`Tool Result [${entry.toolCall.function.name}] (parallel, ${elapsedMs} ms total)`, r);
+                const resultStr = formatToolResult(r);
                 const truncatedResult = truncateToolResult(resultStr, entry.toolCall.function.name);
                 messages.push({
                   role: 'tool',
@@ -634,11 +644,11 @@ ${memoriesSection}`;
             } else {
               // ── SEQUENTIAL pass ─────────────────────────────────────────────────
               for (const entry of preflight) {
-                const result = await entry.run();
-                turnResults.push(result);
-                onEvent?.({ type: 'tool_result', tool: entry.toolCall.function.name, result });
-                logObject(`Tool Result [${entry.toolCall.function.name}]`, result);
-                const resultStr = JSON.stringify(result);
+                const res = await entry.run();
+                turnResults.push(res);
+                onEvent?.({ type: 'tool_result', tool: entry.toolCall.function.name, result: res });
+                logObject(`Tool Result [${entry.toolCall.function.name}]`, res);
+                const resultStr = formatToolResult(res);
                 const truncatedResult = truncateToolResult(resultStr, entry.toolCall.function.name);
                 messages.push({
                   role: 'tool',
