@@ -1,0 +1,275 @@
+import { config } from '../config.js';
+import { log } from '../logger.js';
+import { getOllamaClient, getModel } from '../ollama-client.js';
+import { extractJsonContent } from './json-repair.js';
+import type {
+  AgentLoopHooks,
+  AfterToolCallContext,
+  ShouldStopAfterTurnContext,
+  TransformContextContext,
+  TriageAction,
+} from './types.js';
+
+const TRIAGE_SYSTEM_PROMPT = `You are a triage observer for an AI coding agent. Analyse the recent tool results and decide if the agent needs help.
+
+Rules:
+- Be concise. The agent is mid-task, not waiting for a lecture.
+- Only flag something if you see a clear, repeated pattern.
+- A single failure is normal. 3+ identical failures in a row is a pattern.
+- Context pressure alone is not an emergency — the main agent handles this. Only flag if pressure is high AND failures are happening.
+- Never suggest code changes. You are a monitor, not a coder.
+- Never answer the user's original question. That's the main agent's job.`;
+
+const TRIAGE_FUNCTION_SCHEMA = {
+  name: 'triage',
+  description: 'Triage assessment of agent health',
+  parameters: {
+    type: 'object',
+    properties: {
+      assessment: {
+        type: 'string',
+        enum: ['normal', 'concerning', 'bad'],
+        description: 'Overall assessment of agent state',
+      },
+      action: {
+        type: 'string',
+        enum: ['continue', 'compress', 'steer', 'escalate'],
+        description: 'Recommended action',
+      },
+      reason: {
+        type: 'string',
+        description: 'One-sentence rationale for the action',
+      },
+      steering_message: {
+        type: 'string',
+        description: "Only if action is 'steer': brief instruction to inject as a user message",
+      },
+    },
+    required: ['assessment', 'action', 'reason'],
+  },
+};
+
+const THRASH_TOOL_FAIL_THRESHOLD = 3;
+const CONTEXT_HIGH_PRESSURE = 0.9;
+const CONTEXT_READINGS_BEFORE_FLAG = 3;
+const TURN_EXHAUSTION_RATIO = 0.8;
+const LOG_ERROR_THRESHOLD = 3;
+
+interface TriageSnapshot {
+  toolFailures: Map<string, number>;
+  contextReadings: { used: number; total: number }[];
+  turnCount: number;
+  maxSteps: number;
+  errorLogCount: number;
+}
+
+export class TriageAgent {
+  /** Set by the scheduler before each task execution. Hooks read this to tag snapshots. */
+  currentTaskId = '';
+
+  private snapshots = new Map<string, TriageSnapshot>();
+  private taskIndex = 0;
+  private autoSteer: boolean;
+
+  constructor(autoSteer: boolean) {
+    this.autoSteer = autoSteer;
+  }
+
+  reset(taskId: string) {
+    this.snapshots.set(taskId, {
+      toolFailures: new Map(),
+      contextReadings: [],
+      turnCount: 0,
+      maxSteps: config.MAX_STEPS,
+      errorLogCount: 0,
+    });
+  }
+
+  recordToolFailure(taskId: string, toolName: string) {
+    const snap = this.snapshots.get(taskId);
+    if (!snap) return;
+    const current = snap.toolFailures.get(toolName) ?? 0;
+    snap.toolFailures.set(toolName, current + 1);
+  }
+
+  recordContextReading(taskId: string, used: number, total: number) {
+    const snap = this.snapshots.get(taskId);
+    if (!snap) return;
+    snap.contextReadings.push({ used, total });
+    if (snap.contextReadings.length > 5) snap.contextReadings.shift();
+  }
+
+  recordTurn(taskId: string) {
+    const snap = this.snapshots.get(taskId);
+    if (!snap) return;
+    snap.turnCount++;
+  }
+
+  recordLogError(taskId: string) {
+    const snap = this.snapshots.get(taskId);
+    if (!snap) return;
+    snap.errorLogCount++;
+  }
+
+  async analyzeBetweenTasks(): Promise<TriageAction> {
+    if (this.snapshots.size === 0) return { type: 'continue' };
+
+    this.taskIndex++;
+    if (this.taskIndex % config.TRIAGE_INTERVAL !== 0) return { type: 'continue' };
+
+    let totalToolFailures = 0;
+    let maxConsecutiveFailures = 0;
+    let worstTool = '';
+    let avgPressure = 0;
+    let pressureReadings = 0;
+    let maxTurnRatio = 0;
+    let totalLogErrors = 0;
+
+    for (const snap of this.snapshots.values()) {
+      for (const [tool, count] of snap.toolFailures) {
+        totalToolFailures += count;
+        if (count > maxConsecutiveFailures) {
+          maxConsecutiveFailures = count;
+          worstTool = tool;
+        }
+      }
+      for (const r of snap.contextReadings) {
+        avgPressure += r.used / r.total;
+        pressureReadings++;
+      }
+      maxTurnRatio = Math.max(maxTurnRatio, snap.turnCount / Math.max(snap.maxSteps, 1));
+      totalLogErrors += snap.errorLogCount;
+    }
+    if (pressureReadings > 0) avgPressure /= pressureReadings;
+
+    const hasHighPressure = avgPressure >= CONTEXT_HIGH_PRESSURE && pressureReadings >= CONTEXT_READINGS_BEFORE_FLAG;
+    const hasToolThrash = maxConsecutiveFailures >= THRASH_TOOL_FAIL_THRESHOLD;
+    const hasTurnExhaustion = maxTurnRatio >= TURN_EXHAUSTION_RATIO;
+    const hasLogErrors = totalLogErrors >= LOG_ERROR_THRESHOLD;
+
+    if (!hasToolThrash && !hasTurnExhaustion && !hasLogErrors) {
+      if (hasHighPressure) {
+        log('Triage: high context pressure detected, forcing compaction', 'INFO');
+        return { type: 'compress', reason: `Context at ${(avgPressure * 100).toFixed(0)}% across ${this.snapshots.size} tasks` };
+      }
+      return { type: 'continue' };
+    }
+
+    const contextLines: string[] = [];
+    contextLines.push(`Tasks analysed: ${this.snapshots.size}`);
+    contextLines.push(`Worst tool failure: ${worstTool} failed ${maxConsecutiveFailures}x consecutively`);
+    contextLines.push(`Context pressure: ${(avgPressure * 100).toFixed(0)}% (${pressureReadings} readings)`);
+    contextLines.push(`Turn exhaustion: ${(maxTurnRatio * 100).toFixed(0)}% of max steps`);
+    contextLines.push(`Log errors: ${totalLogErrors}`);
+
+    log('Triage: pattern detected, calling observer model', 'INFO');
+    const action = await this.callTriageModel(contextLines.join('\n'));
+
+    if (action.type === 'steer' && !this.autoSteer) {
+      log(`Triage suggests steering but auto-steer is disabled: "${action.message}"`, 'INFO');
+      return { type: 'continue' };
+    }
+
+    return action;
+  }
+
+  private async callTriageModel(context: string): Promise<TriageAction> {
+    const model = config.TRIAGE_MODEL || getModel();
+    const client = getOllamaClient();
+    const systemMsg = { role: 'system' as const, content: TRIAGE_SYSTEM_PROMPT };
+    const userMsg = { role: 'user' as const, content: context };
+
+    // Attempt 1: function calling (structured output)
+    try {
+      const response = await client.chat.completions.create({
+        model,
+        messages: [systemMsg, userMsg],
+        tools: [{ type: 'function', function: TRIAGE_FUNCTION_SCHEMA }],
+        tool_choice: { type: 'function', function: { name: 'triage' } },
+        max_tokens: 100,
+        temperature: 0,
+      });
+      const call = response.choices[0]?.message?.tool_calls?.[0];
+      if (call?.function?.arguments) {
+        const parsed = JSON.parse(call.function.arguments);
+        return mapRawToAction(parsed);
+      }
+    } catch {
+      // Fall through to fallback
+    }
+
+    // Attempt 2: JSON-in-prompt (portable, works with any provider)
+    try {
+      const prompt = `${TRIAGE_SYSTEM_PROMPT}\n\n${context}\n\nRespond with ONLY a JSON object matching this schema:\n${JSON.stringify(TRIAGE_FUNCTION_SCHEMA, null, 2)}`;
+      const response = await client.chat.completions.create({
+        model,
+        messages: [{ role: 'user', content: prompt }],
+        max_tokens: 150,
+        temperature: 0,
+      });
+      const text = response.choices[0]?.message?.content || '';
+      const extracted = extractJsonContent(text);
+      if (extracted) {
+        const parsed = JSON.parse(extracted);
+        return mapRawToAction(parsed);
+      }
+    } catch {
+      // Safe fallback
+    }
+
+    return { type: 'continue' };
+  }
+}
+
+function mapRawToAction(raw: any): TriageAction {
+  const action = String(raw.action || 'continue');
+  switch (action) {
+    case 'compress':
+      return { type: 'compress', reason: String(raw.reason || 'Triage recommendation') };
+    case 'steer':
+      return { type: 'steer', message: String(raw.steering_message || raw.reason || 'Adjust approach') };
+    case 'escalate':
+      return { type: 'escalate', reason: String(raw.reason || 'Triage escalation') };
+    default:
+      return { type: 'continue' };
+  }
+}
+
+export function withTriageHooks(
+  baseHooks: AgentLoopHooks,
+  triage: TriageAgent,
+): AgentLoopHooks {
+  return {
+    ...baseHooks,
+
+    reset() {
+      baseHooks.reset?.();
+      if (triage.currentTaskId) triage.reset(triage.currentTaskId);
+    },
+
+    async afterToolCall(ctx: AfterToolCallContext) {
+      const baseResult = await baseHooks.afterToolCall?.(ctx);
+      const toolName = (ctx.toolCall as any)?.function?.name || 'unknown';
+      if (triage.currentTaskId && !ctx.result?.success) {
+        triage.recordToolFailure(triage.currentTaskId, toolName);
+      }
+      return baseResult;
+    },
+
+    async shouldStopAfterTurn(ctx: ShouldStopAfterTurnContext) {
+      const baseResult = await baseHooks.shouldStopAfterTurn?.(ctx);
+      if (baseResult) return true;
+      if (triage.currentTaskId) triage.recordTurn(triage.currentTaskId);
+      return false;
+    },
+
+    async transformContext(ctx: TransformContextContext) {
+      if (triage.currentTaskId) {
+        const total = config.CONTEXT_WINDOW;
+        const used = ctx.estimatedTokens;
+        triage.recordContextReading(triage.currentTaskId, used, total);
+      }
+      return baseHooks.transformContext?.(ctx) ?? ctx.messages;
+    },
+  };
+}

@@ -202,6 +202,13 @@ export interface AgentLoopHooks {
   reset?: () => void;
 }
 
+/** Action returned by the triage agent after analysing agent health. */
+export type TriageAction =
+  | { type: 'continue' }
+  | { type: 'compress'; reason: string }
+  | { type: 'steer'; message: string }
+  | { type: 'escalate'; reason: string };
+
 /** Aggregated hook configuration for TaskExecutor. */
 export interface ExecutorHooksConfig {
   hooks: AgentLoopHooks;

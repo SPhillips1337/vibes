@@ -3,6 +3,7 @@ import { Mission, ExecutionEvent } from '../../agent/types.js';
 import { MissionPlanner } from '../../agent/mission-planner.js';
 import { TaskExecutor, createDefaultHooks } from '../../agent/task-executor.js';
 import { Scheduler, InterventionResolution } from '../../agent/scheduler.js';
+import { TriageAgent, withTriageHooks } from '../../agent/triage-agent.js';
 import { listDirTool, readFileTool, writeFileTool, globTool, fileOutlineTool, readLinesTool } from '../../tools/file-tools.js';
 import { shellTool } from '../../tools/shell-tool.js';
 import { editFileTool } from '../../tools/file-edit.js';
@@ -153,9 +154,11 @@ export const useMission = () => {
         ...mcpTools,
         ...pluginTools
       ];
+      const triage = config.TRIAGE_ENABLED ? new TriageAgent(config.TRIAGE_AUTO_STEER) : null;
+      const baseHooks = createDefaultHooks(() => isYoloRef.current);
       const executor = new TaskExecutor(tools, {
         getYoloMode: () => isYoloRef.current,
-        hooks: createDefaultHooks(() => isYoloRef.current),
+        hooks: triage ? withTriageHooks(baseHooks, triage) : baseHooks,
       });
 
       const onEvent = (event: ExecutionEvent) => {
@@ -177,6 +180,7 @@ export const useMission = () => {
       };
 
       const scheduler = new Scheduler(plan, executor, onEvent, () => isYoloRef.current);
+      if (triage) scheduler.triageAgent = triage;
       schedulerRef.current = scheduler;
 
       // Dynamic Proxy Handshake: Prime the proxy with task context

@@ -1,10 +1,11 @@
-import { Mission, Task, OnEvent } from './types.js';
+import { Mission, Task, OnEvent, TriageAction } from './types.js';
 import { TaskExecutor } from './task-executor.js';
 import { config } from '../config.js';
 import { log } from '../logger.js';
 import { InterventionManager } from './intervention-manager.js';
 import { getMemoryService } from '../memory/index.js';
 import { runStructuralAudit } from './structural-audit.js';
+import { TriageAgent } from './triage-agent.js';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { existsSync, readFileSync } from 'fs';
@@ -34,6 +35,9 @@ export class Scheduler {
   // Pending intervention: resolve callback waiting for user input
   private interventionResolve: ((res: InterventionResolution) => void) | null = null;
   private getYoloMode: () => boolean;
+
+  triageAgent?: TriageAgent;
+  private pendingSteerMessage = '';
 
   constructor(mission: Mission, executor: TaskExecutor, onEvent?: OnEvent, getYoloMode: () => boolean = () => config.YOLO_MODE) {
     this._mission = mission;
@@ -94,11 +98,28 @@ export class Scheduler {
 
       if (tasksToStart.length > 0) {
         log(`Starting ${tasksToStart.length} tasks...`, 'INFO');
+        // Inject any pending steering message into the next task
+        if (this.pendingSteerMessage) {
+          tasksToStart[0].userGuidance = tasksToStart[0].userGuidance
+            ? `${tasksToStart[0].userGuidance}\n\n${this.pendingSteerMessage}`
+            : this.pendingSteerMessage;
+          this.pendingSteerMessage = '';
+        }
         for (const task of tasksToStart) {
           this.executeTask(task); // fire-and-forget, manages itself
         }
       }
-      
+
+      // Triage: between-task analysis
+      if (this.triageAgent) {
+        try {
+          const action = await this.triageAgent.analyzeBetweenTasks();
+          await this.handleTriageAction(action);
+        } catch (err: any) {
+          log(`Triage analysis error: ${err.message}`, 'WARN');
+        }
+      }
+
       await new Promise(resolve => setTimeout(resolve, 500));
     }
 
@@ -132,10 +153,36 @@ export class Scheduler {
     return Array.from(this.taskMap.values());
   }
 
+  private async handleTriageAction(action: TriageAction) {
+    switch (action.type) {
+      case 'continue':
+        break;
+      case 'compress':
+        log(`Triage: ${action.reason}`, 'INFO');
+        break;
+      case 'steer':
+        log(`Triage: steering next task — ${action.message}`, 'INFO');
+        this.pendingSteerMessage = action.message;
+        break;
+      case 'escalate': {
+        log(`Triage: escalation — ${action.reason}`, 'WARN');
+        this._mission.status = 'awaiting_intervention';
+        this.onEvent?.({
+          type: 'intervention_required',
+          taskId: this.triageAgent?.currentTaskId || '',
+          error: `Triage escalation: ${action.reason}`,
+          question: `The triage observer recommends intervention:\n\n${action.reason}\n\nWhat would you like to do?`,
+        });
+        break;
+      }
+    }
+  }
+
   private async executeTask(task: Task) {
     this.runningTasks.add(task.id);
     task.status = 'in_progress';
     this.failedTasks.delete(task.id);
+    if (this.triageAgent) this.triageAgent.currentTaskId = task.id;
 
     this.onEvent?.({ type: 'task_started', taskId: task.id, title: task.title });
 
