@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { render, Box, Text, useInput, useApp } from 'ink';
-import { TextInput } from '@inkjs/ui';
+import { EnhancedTextInput } from './tui/components/enhanced-text-input.js';
 import { useMission } from './tui/hooks/use-mission.js';
 import { useUpdateCheck } from './tui/hooks/use-update-check.js';
 import { useSettings } from './tui/hooks/use-settings.js';
@@ -281,7 +281,7 @@ const App = () => {
               </Box>
               <Box borderStyle="single" borderColor={focusIndex === 0 ? 'cyan' : 'gray'} paddingX={1}>
                 {focusIndex === 0 ? (
-                  <TextInput
+                  <EnhancedTextInput
                     defaultValue={workspace}
                     onChange={setWorkspace}
                     onSubmit={() => setFocusIndex(1)}
@@ -300,7 +300,7 @@ const App = () => {
               </Box>
               <Box borderStyle="single" borderColor={focusIndex === 1 ? 'green' : 'gray'} paddingX={1}>
                 {focusIndex === 1 ? (
-                  <TextInput
+                  <EnhancedTextInput
                     placeholder="e.g. Add a dark mode toggle to the settings panel"
                     onSubmit={handleSubmit}
                   />
