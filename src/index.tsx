@@ -357,4 +357,5 @@ const App = () => {
   );
 };
 
+process.stdout.write('\x1Bc');
 render(<App />);
