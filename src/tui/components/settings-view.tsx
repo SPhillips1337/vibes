@@ -47,6 +47,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     { label: 'Memory Enabled', key: 'MEMORY_ENABLED', type: 'boolean' },
     { label: 'Local Memory', key: 'LOCAL_MEMORY', type: 'boolean' },
     { label: 'Memory User ID', key: 'MEMORY_USER_ID', type: 'text' },
+    { label: 'Triage Observer', key: 'TRIAGE_ENABLED', type: 'boolean' },
+    { label: 'Triage Model (empty = same as main)', key: 'TRIAGE_MODEL', type: 'text' },
+    { label: 'Triage Interval (tasks)', key: 'TRIAGE_INTERVAL', type: 'number' },
+    { label: 'Triage Auto-Steer', key: 'TRIAGE_AUTO_STEER', type: 'boolean' },
   ];
 
   // Sync tempSettings when the parent settings prop changes.
