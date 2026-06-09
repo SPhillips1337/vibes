@@ -109,7 +109,16 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   });
 
   const maxVisible = Math.max(5, (stdout.rows || 24) - 10);
-  const startIdx = Math.max(0, Math.min(focusIndex - Math.floor(maxVisible / 2), fields.length - maxVisible));
+  const [startIdx, setStartIdx] = React.useState(0);
+
+  // Maintain a stable scrolling window that only shifts when focus hits the edges
+  React.useEffect(() => {
+    if (focusIndex < startIdx) {
+      setStartIdx(focusIndex);
+    } else if (focusIndex >= startIdx + maxVisible) {
+      setStartIdx(focusIndex - maxVisible + 1);
+    }
+  }, [focusIndex, startIdx, maxVisible]);
 
   return (
     <Box flexDirection="column" borderStyle="round" borderColor="cyan" padding={1}>
