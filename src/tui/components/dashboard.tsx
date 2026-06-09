@@ -9,9 +9,10 @@ interface DashboardProps {
   isExecuting: boolean;
   isYoloMode?: boolean;
   contextUsage?: { used: number; total: number; percentage: number } | null;
+  triageState?: { state: 'watching' | 'guiding' | 'escalated'; message?: string } | null;
 }
 
-export const Dashboard: React.FC<DashboardProps> = ({ mission, isPlanning, isExecuting, isYoloMode, contextUsage }) => {
+export const Dashboard: React.FC<DashboardProps> = ({ mission, isPlanning, isExecuting, isYoloMode, contextUsage, triageState }) => {
   const [dots, setDots] = useState('');
   const [systemInfo, setSystemInfo] = useState({
     cpu: 0,
@@ -149,6 +150,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ mission, isPlanning, isExe
           <Text bold color="yellow">EXECUTING AGENT LOOP</Text>
           <Text color="yellow"> {dots}</Text>
           {isYoloMode && <Text color="yellow" bold inverse> [YOLO MODE ENABLED] </Text>}
+          {triageState && triageState.state === 'guiding' && (
+            <Text color="cyan" bold> [TRIAGE GUIDING] </Text>
+          )}
+          {triageState && triageState.state === 'escalated' && (
+            <Text color="red" bold inverse> [TRIAGE ESCALATED] </Text>
+          )}
         </Box>
       )}
 

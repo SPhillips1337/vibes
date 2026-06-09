@@ -6,6 +6,7 @@ import { logObject, log } from '../logger.js';
 import { repairJson, extractJsonContent } from './json-repair.js';
 import { getMemoryService } from '../memory/index.js';
 import { detectTechStack } from './tech-stack.js';
+import { getModelSpecificPrompt } from './model-prompts.js';
 
 export class MissionPlanner {
   private memory = getMemoryService();
@@ -49,11 +50,15 @@ export class MissionPlanner {
       ? `\n[WORKSPACE TECH STACK]: ${stack.join(', ')}\nTailor all task file paths, languages, and implementation approaches to this stack.\n`
       : '';
 
+    const plannerModel = config.PLANNER_MODEL || getModel();
+    const modelSpecificPrompt = getModelSpecificPrompt(plannerModel, 'planner');
+
     const systemPrompt = `You are a mission planning agent. Break the mission into milestones and tasks.
 Output ONLY a JSON object.
 ${memoriesSection}
 ${projectRules}
 ${stackContext}
+${modelSpecificPrompt}
 
 Structure:
 {
@@ -87,7 +92,8 @@ Constraints:
 6. Classify each task's "type": "code" (writing code), "config" (changing configs, package.json, env files), or "research" (analysis, reading files, gathering info). Only "code" tasks trigger automated review.
 7. No extra text or preamble.
 8. STOP when the acceptance criteria are met. Do not add extra polish, build pipelines, or deployment steps unless explicitly requested.
-9. **STRICT BOUNDARIES** — plans MUST NOT include tasks that:
+9. **ATOMIC TASKS** — Each task must be atomic with clearly bounded scope. Avoid open-ended descriptions like "multiple shapes" — enumerate specific, discrete deliverables instead (e.g. "Create a SkeletonCircle component" not "Add multiple shapes"). If a requirement implies open-ended work, break it into one task per concrete deliverable.
+10. **STRICT BOUNDARIES** — plans MUST NOT include tasks that:
 - Generate SSL/TLS certificates, SSH keys, API keys, secrets, or any credentials.
 - Run network tools: curl, wget, scp, rsync, ssh, sftp, nc.
 - Push to or clone from remote git repositories.
@@ -97,11 +103,10 @@ Constraints:
 - Write files outside the provided workspace directory.
 - Use openssl, ssh-keygen, gpg, or any cryptography tooling.
 
-9. A request for a "web app" means: HTML, CSS, and JavaScript files only. Not a build pipeline, not a service worker, not a deployment config — unless explicitly asked.
-10. Define task dependencies in the "depends_on" field using the exact titles of prerequisite tasks in the plan. If there are no prerequisites, use an empty array. Design the plan so that file creation, code implementation, test suites, and manual verifications follow a logical sequence.`;
+11. A request for a "web app" means: HTML, CSS, and JavaScript files only. Not a build pipeline, not a service worker, not a deployment config — unless explicitly asked.
+12. Define task dependencies in the "depends_on" field using the exact titles of prerequisite tasks in the plan. If there are no prerequisites, use an empty array. Design the plan so that file creation, code implementation, test suites, and manual verifications follow a logical sequence.`;
 
-    const plannerModel = config.PLANNER_MODEL || getModel();
-    const response = await getOllamaClient().chat.completions.create({
+    const response = await getOllamaClient('planner').chat.completions.create({
       model: plannerModel,
       messages: [
         { role: 'system', content: systemPrompt },
@@ -143,7 +148,7 @@ Constraints:
         // First attempt already has content; retry must make a new API call
         if (attempt === 1) {
           log('Retrying planner with stronger JSON-only prompt...', 'WARN');
-          const retryResponse = await getOllamaClient().chat.completions.create({
+          const retryResponse = await getOllamaClient('planner').chat.completions.create({
             model: plannerModel,
             messages: [
               { role: 'system', content: systemPrompt },

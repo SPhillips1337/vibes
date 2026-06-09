@@ -23,7 +23,7 @@ const App = () => {
   const {
     mission, pendingMission, isPlanning, isExecuting,
     error, events, contextUsage, pendingIntervention, activeMaxSteps,
-    isYoloMode, toggleYoloMode, sessions,
+    isYoloMode, toggleYoloMode, sessions, triageState,
     startMission, approveMission, rejectMission, resolveIntervention, resetMission, undoMission,
     loadSession, deleteSession,
   } = useMission();
@@ -35,7 +35,10 @@ const App = () => {
     performUpdate, dismiss: dismissUpdate, resetStatus: resetUpdateStatus,
   } = useUpdateCheck();
 
-  const { settings, availableModels, saveSettings } = useSettings();
+  const { 
+    settings, 
+    saveSettings 
+  } = useSettings();
   const closeSettings = React.useCallback(() => setView('dashboard'), []);
 
   const [workspace, setWorkspace] = React.useState(process.env.VIBES_LAUNCH_DIR || process.cwd());
@@ -92,12 +95,14 @@ const App = () => {
       }
     }
 
-    // Suppress other global shortcuts while typing in a text field
-    const isTyping = (isIdle && view === 'dashboard') || view === 'settings'; 
-    if (isTyping) {
+    // Settings owns its full keyboard interaction model.
+    if (view === 'settings') return;
+
+    // Suppress other global shortcuts while typing in dashboard text fields.
+    if (isIdle && view === 'dashboard') {
       if (key.tab && !key.shift) setFocusIndex(prev => (prev === 0 ? 1 : 0));
       if (key.tab && key.shift) setFocusIndex(prev => (prev === 1 ? 0 : 1));
-      return; 
+      return;
     }
 
     // Home/End key navigation (only when not typing in text fields or scrolling logs)
@@ -156,27 +161,29 @@ const App = () => {
         </Box>
       </Box>
 
-      {isYoloMode && (
+      {isYoloMode && view !== 'settings' && (
         <Box justifyContent="center" borderStyle="single" borderColor="yellow" paddingX={1} marginTop={1}>
           <Text color="yellow" bold inverse> ⚡ YOLO MODE ENABLED — NO STEP LIMITS ⚡ </Text>
         </Box>
       )}
 
       {/* Update Notification */}
-      <UpdateNotification
-        updateInfo={updateInfo}
-        status={updateStatus}
-        error={updateError}
-        dismissed={updateDismissed}
-        updateLog={updateLog}
-        onUpdate={performUpdate}
-        onDismiss={dismissUpdate}
-        onReset={resetUpdateStatus}
-      />
+      {view !== 'settings' && (
+        <UpdateNotification
+          updateInfo={updateInfo}
+          status={updateStatus}
+          error={updateError}
+          dismissed={updateDismissed}
+          updateLog={updateLog}
+          onUpdate={performUpdate}
+          onDismiss={dismissUpdate}
+          onReset={resetUpdateStatus}
+        />
+      )}
 
       {/* Main Content */}
       <Box flexDirection="column" minHeight={15} marginTop={1}>
-        {error && (
+        {error && view !== 'settings' && (
           <Box borderStyle="single" borderColor="red" paddingX={1} marginBottom={1} flexDirection="column">
             <Text color="red" bold>Error Detected:</Text>
             <Text color="red">{error.length > 500 ? error.slice(0, 500) + '...' : error}</Text>
@@ -211,7 +218,6 @@ const App = () => {
         {view === 'settings' && (
           <SettingsView
             settings={settings}
-            availableModels={availableModels}
             onSave={saveSettings}
             onClose={closeSettings}
           />
@@ -224,6 +230,7 @@ const App = () => {
             isExecuting={isExecuting}
             isYoloMode={isYoloMode}
             contextUsage={contextUsage}
+            triageState={triageState}
           />
         )}
 
@@ -323,7 +330,7 @@ const App = () => {
       </Box>
 
       {/* Navigation */}
-      {!pendingMission && !pendingIntervention && (
+      {!pendingMission && !pendingIntervention && view !== 'settings' && (
         <Box borderStyle="single" borderColor="blue" paddingX={1} justifyContent="center" gap={2} marginTop={1}>
           {!isIdle ? (
             <>
@@ -331,31 +338,33 @@ const App = () => {
               <Text color={view === 'mission' ? 'white' : 'blue'}>[Alt+M] Mission</Text>
               <Text color={view === 'trace' ? 'white' : 'blue'}>[Alt+T] Trace</Text>
               <Text color={view === 'task' ? 'white' : 'blue'}>[Alt+⇧T] Task</Text>
-              <Text color={view === 'settings' ? 'white' : 'blue'}>[Alt+S] Settings</Text>
+              <Text color="blue">[Alt+S] Settings</Text>
               <Text color={view === 'log' ? 'white' : 'blue'}>[Alt+L] Logs</Text>
             </>
           ) : (
             <>
               <Text color={view === 'history' ? 'white' : 'blue'}>[Alt+H] History</Text>
-              <Text color={view === 'settings' ? 'white' : 'blue'}>[Alt+S] Settings</Text>
+              <Text color="blue">[Alt+S] Settings</Text>
             </>
           )}
         </Box>
       )}
 
       {/* Footer */}
-      <Box marginTop={1} borderStyle="single" borderColor="gray" paddingX={1} justifyContent="space-between">
-        <Text color="gray">Model: {settings.OLLAMA_MODEL}</Text>
-        <Box>
-          <Text color="gray">
-            Context: {contextKB}K tokens | Max Steps: 
-          </Text>
-          <Text color={isYoloMode || activeMaxSteps > settings.MAX_STEPS ? 'yellow' : 'gray'} bold={isYoloMode || activeMaxSteps > settings.MAX_STEPS}>
-            {isYoloMode ? '∞' : activeMaxSteps}{!isYoloMode && activeMaxSteps > settings.MAX_STEPS ? ` (+${activeMaxSteps - settings.MAX_STEPS})` : ''}
-          </Text>
-          <Text color="gray"> | Concurrent: {settings.MAX_CONCURRENT_TASKS}</Text>
+      {view !== 'settings' && (
+        <Box marginTop={1} borderStyle="single" borderColor="gray" paddingX={1} justifyContent="space-between">
+          <Text color="gray">Model: {settings.OLLAMA_MODEL}</Text>
+          <Box>
+            <Text color="gray">
+              Context: {contextKB}K tokens | Max Steps:
+            </Text>
+            <Text color={isYoloMode || activeMaxSteps > settings.MAX_STEPS ? 'yellow' : 'gray'} bold={isYoloMode || activeMaxSteps > settings.MAX_STEPS}>
+              {isYoloMode ? '∞' : activeMaxSteps}{!isYoloMode && activeMaxSteps > settings.MAX_STEPS ? ` (+${activeMaxSteps - settings.MAX_STEPS})` : ''}
+            </Text>
+            <Text color="gray"> | Concurrent: {settings.MAX_CONCURRENT_TASKS}</Text>
+          </Box>
         </Box>
-      </Box>
+      )}
     </Box>
   );
 };

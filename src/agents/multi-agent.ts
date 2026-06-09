@@ -64,10 +64,12 @@ export class BaseAgent {
       });
 
       const message = response.choices[0]?.message;
-      if (message?.content) {
+      const rawMsg = message as any;
+      const text = message?.content || rawMsg?.reasoning_content || '';
+      if (text) {
         this.messageHistory.push({ role: 'user', content: userMessage });
-        this.messageHistory.push(message);
-        return message.content;
+        this.messageHistory.push({ ...message, content: text });
+        return text;
       }
       return '';
     } catch (error: any) {

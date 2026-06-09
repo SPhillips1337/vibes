@@ -75,7 +75,8 @@ export type ExecutionEvent =
   | { type: 'task_completed'; taskId: string; title: string }
   | { type: 'task_failed'; taskId: string; title: string; error: string }
   | { type: 'system_log'; level: 'INFO' | 'WARN' | 'ERROR' | 'DEBUG'; message: string; timestamp: string }
-  | { type: 'timeout_warning'; thresholdSeconds: number; durationSeconds: number };
+  | { type: 'timeout_warning'; thresholdSeconds: number; durationSeconds: number }
+  | { type: 'triage_state'; state: 'watching' | 'guiding' | 'escalated'; message?: string };
 
 export type OnEvent = (event: ExecutionEvent) => void;
 
@@ -187,6 +188,12 @@ export interface AgentLoopHooks {
   transformContext?: (ctx: TransformContextContext) => Promise<ChatCompletionMessageParam[]>;
 
   /**
+   * Inject live steering into the message stream. Called before each LLM
+   * turn. Return a string to inject as a user message, or null for no-op.
+   */
+  getSteeringMessage?: () => Promise<string | null>;
+
+  /**
    * Inject mid-run messages (steering). Called after each turn completes,
    * before the next LLM call. Return `[]` when nothing to inject.
    */
@@ -201,6 +208,13 @@ export interface AgentLoopHooks {
   /** Optional hook to reset transient loop/thrash state at task boundary. */
   reset?: () => void;
 }
+
+/** Action returned by the triage agent after analysing agent health. */
+export type TriageAction =
+  | { type: 'continue' }
+  | { type: 'compress'; reason: string }
+  | { type: 'steer'; message: string }
+  | { type: 'escalate'; reason: string };
 
 /** Aggregated hook configuration for TaskExecutor. */
 export interface ExecutorHooksConfig {

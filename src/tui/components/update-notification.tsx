@@ -114,9 +114,6 @@ export const UpdateNotification: React.FC<UpdateNotificationProps> = ({
     return null;
   }
 
-  // Show update available banner
-  const timeAgo = updateInfo.remoteDate ? formatTimeAgo(updateInfo.remoteDate) : '';
-
   return (
     <Box
       flexDirection="column"
@@ -129,22 +126,17 @@ export const UpdateNotification: React.FC<UpdateNotificationProps> = ({
         <Box gap={1}>
           <Text color="magenta" bold>📦 Update Available!</Text>
           <Text color="gray">
-            {updateInfo.commitsBehind} new commit{updateInfo.commitsBehind > 1 ? 's' : ''} on main
+            A new version is available on npm
           </Text>
         </Box>
-        <Text color="gray" dimColor>{updateInfo.localCommit} → {updateInfo.remoteCommit}</Text>
-      </Box>
-
-      <Box marginTop={0} paddingLeft={3}>
-        <Text color="white" italic>"{updateInfo.remoteMessage}"</Text>
-        {timeAgo && <Text color="gray" dimColor> — {updateInfo.remoteAuthor}, {timeAgo}</Text>}
+        <Text color="gray" dimColor>v{updateInfo.localVersion} → v{updateInfo.remoteVersion}</Text>
       </Box>
 
       <Box marginTop={1} gap={3}>
         <Box gap={1}>
           <Text color="gray">Press </Text>
           <Text color="green" bold>[Alt+U]</Text>
-          <Text color="gray"> to update & rebuild</Text>
+          <Text color="gray"> to install update</Text>
         </Box>
         <Box gap={1}>
           <Text color="gray">Press </Text>
@@ -155,22 +147,3 @@ export const UpdateNotification: React.FC<UpdateNotificationProps> = ({
     </Box>
   );
 };
-
-function formatTimeAgo(dateStr: string): string {
-  try {
-    const date = new Date(dateStr);
-    const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
-    const diffMins = Math.floor(diffMs / 60000);
-    const diffHours = Math.floor(diffMs / 3600000);
-    const diffDays = Math.floor(diffMs / 86400000);
-
-    if (diffMins < 1) return 'just now';
-    if (diffMins < 60) return `${diffMins}m ago`;
-    if (diffHours < 24) return `${diffHours}h ago`;
-    if (diffDays < 7) return `${diffDays}d ago`;
-    return date.toLocaleDateString();
-  } catch {
-    return '';
-  }
-}

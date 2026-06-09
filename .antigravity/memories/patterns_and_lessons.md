@@ -1,3 +1,12 @@
+---
+type: procedural
+tags: [typescript, agents, prompts, model-compatibility, gemma]
+created: 2026-06-09
+related: [codebase_insights/agent_architecture.md, architectural_decisions/local_llm_hybrid_strategy.md]
+blast_radius: [src/agent, package-distribution]
+confidence: high
+---
+
 # Patterns & Lessons: Vibes TUI
 
 ## 🟢 Success Patterns (Anti-Gravity)
@@ -212,3 +221,24 @@
 - **Fix:** Convert to a config-aware singleton that caches the client and only re-creates when `OLLAMA_BASE_URL` or `OLLAMA_API_KEY` changes (to support live `updateConfig()` from the settings TUI). A shared singleton enables HTTP Keep-Alive reuse across all agent steps and concurrent tasks.
 - **Note:** Per-step sequential LLM calls within a single `TaskExecutor` loop are correct by design. Parallelism is at the *task* level via `MAX_CONCURRENT_TASKS` in the Scheduler.
 - **Files:** `src/ollama-client.ts`
+
+### 31. Role-Aware Model Prompt Adapters
+
+- **Lesson:** A prompt written for one agent harness cannot be injected unchanged into every role. Instructions such as "emit unified diffs" conflict with Vibes native tools and corrupt JSON-only planner, reviewer, and triage responses.
+- **Fix:** Split model guidance into a shared compatibility prompt plus a final role contract. Executor guidance preserves Vibes function tools and its JSON fallback; planner and reviewer require raw schema-valid JSON; triage prefers its forced function call and falls back to raw JSON.
+- **Distribution:** Model prompts are Vibes runtime assets, not mission-workspace files. Resolve bundled assets relative to `import.meta.url`, include them in the npm `files` list, and cache their contents after the first read.
+- **Files:** `src/agent/model-prompts.ts`, `gemma-12b-prompt.md`, `package.json`
+
+### 32. Fixed-Geometry Ink Settings Forms
+
+- **Lesson:** Preventing `TextInput` remounts is insufficient when the surrounding Ink tree still changes dimensions. Per-keystroke parent state updates, multi-row focused fields, conditional status rows, long values wrapping, and global chrome can each push output across `stdout.rows`, forcing full-screen redraws.
+- **Fix:** Keep active drafts in refs, render focused and unfocused settings at identical one-row height, reserve the status row, horizontally window long input around the cursor, and derive the visible field count from terminal rows. Treat Settings as a modal by hiding variable-height banners, navigation, and footer while it is open.
+- **Shortcut Boundary:** The global App input handler must return immediately for the Settings view so Tab navigation updates only Settings state.
+- **Files:** `src/tui/components/settings-view.tsx`, `src/tui/components/enhanced-text-input.tsx`, `src/index.tsx`
+
+### 33. Triage Metric Boundary Validation
+
+- **Lesson:** Context pressure telemetry may contain zero or invalid capacity readings during initialization. JavaScript returns `Infinity` or `NaN` instead of throwing on division by zero, which can silently corrupt threshold checks and averages.
+- **Fix:** Ignore readings whose total capacity is not positive before calculating live or aggregate pressure. Provider endpoint configuration accepts either an empty fallback value or a syntactically valid URL.
+- **Security:** Public examples and project manifests use localhost or environment-variable placeholders instead of concrete private-service hosts.
+- **Files:** `src/agent/triage-agent.ts`, `src/config.ts`, `.env.example`, `project.json`

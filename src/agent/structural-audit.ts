@@ -111,6 +111,7 @@ function getDefinitionBraceDepth(content: string, identifier: string): number | 
         if (templateBraces.length > 0) {
           braceDepth += templateBraces.pop()!;
         }
+        continue;
       } else if (ch === '$' && nextCh === '{') {
         templateBraces.push(braceDepth);
         braceDepth = 0;
@@ -275,6 +276,7 @@ export function runStructuralAudit(workspaceRoot: string, taskFiles: string[]): 
             if (templateBraces.length > 0) {
               braceDepth += templateBraces.pop()!;
             }
+            continue;
           } else if (ch === '$' && nextCh === '{') {
             templateBraces.push(braceDepth);
             braceDepth = 0;

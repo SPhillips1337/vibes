@@ -1,10 +1,11 @@
-import { Mission, Task, OnEvent } from './types.js';
+import { Mission, Task, OnEvent, TriageAction } from './types.js';
 import { TaskExecutor } from './task-executor.js';
 import { config } from '../config.js';
 import { log } from '../logger.js';
 import { InterventionManager } from './intervention-manager.js';
 import { getMemoryService } from '../memory/index.js';
 import { runStructuralAudit } from './structural-audit.js';
+import { TriageAgent } from './triage-agent.js';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { existsSync, readFileSync } from 'fs';
@@ -34,6 +35,12 @@ export class Scheduler {
   // Pending intervention: resolve callback waiting for user input
   private interventionResolve: ((res: InterventionResolution) => void) | null = null;
   private getYoloMode: () => boolean;
+
+  triageAgent?: TriageAgent;
+  private pendingSteerMessage = '';
+  private lastTriageTime = 0;
+  private static readonly TRIAGE_WALL_CLOCK_MS = 30000;
+  private lastEmittedTriageState: string = '';
 
   constructor(mission: Mission, executor: TaskExecutor, onEvent?: OnEvent, getYoloMode: () => boolean = () => config.YOLO_MODE) {
     this._mission = mission;
@@ -94,11 +101,29 @@ export class Scheduler {
 
       if (tasksToStart.length > 0) {
         log(`Starting ${tasksToStart.length} tasks...`, 'INFO');
+        // Inject any pending steering message into the next task
+        if (this.pendingSteerMessage) {
+          tasksToStart[0].userGuidance = tasksToStart[0].userGuidance
+            ? `${tasksToStart[0].userGuidance}\n\n${this.pendingSteerMessage}`
+            : this.pendingSteerMessage;
+          this.pendingSteerMessage = '';
+        }
         for (const task of tasksToStart) {
           this.executeTask(task); // fire-and-forget, manages itself
         }
       }
-      
+
+      // Wall-clock periodic triage check (30s)
+      if (this.triageAgent && Date.now() - this.lastTriageTime >= Scheduler.TRIAGE_WALL_CLOCK_MS) {
+        this.lastTriageTime = Date.now();
+        try {
+          const action = await this.triageAgent.analyzeTimeBased();
+          await this.handleTriageAction(action);
+        } catch (err: any) {
+          log(`Triage time-based analysis error: ${err.message}`, 'WARN');
+        }
+      }
+
       await new Promise(resolve => setTimeout(resolve, 500));
     }
 
@@ -132,10 +157,57 @@ export class Scheduler {
     return Array.from(this.taskMap.values());
   }
 
+  private async runTriageAnalysis() {
+    if (!this.triageAgent) return;
+    try {
+      const action = await this.triageAgent.analyzeBetweenTasks();
+      await this.handleTriageAction(action);
+    } catch (err: any) {
+      log(`Triage analysis error: ${err.message}`, 'WARN');
+    }
+  }
+
+  private emitTriageState(state: 'watching' | 'guiding' | 'escalated', message?: string) {
+    if (this.lastEmittedTriageState === state) return;
+    this.lastEmittedTriageState = state;
+    this.onEvent?.({ type: 'triage_state', state, message });
+  }
+
+  private async handleTriageAction(action: TriageAction) {
+    switch (action.type) {
+      case 'continue': {
+        this.emitTriageState('watching');
+        break;
+      }
+      case 'compress':
+        log(`Triage: ${action.reason}`, 'INFO');
+        this.emitTriageState('watching', action.reason);
+        break;
+      case 'steer':
+        log(`Triage: steering next task — ${action.message}`, 'INFO');
+        this.pendingSteerMessage = action.message;
+        this.emitTriageState('guiding', action.message);
+        break;
+      case 'escalate': {
+        log(`Triage: escalation — ${action.reason}`, 'WARN');
+        this._mission.status = 'awaiting_intervention';
+        this.onEvent?.({
+          type: 'intervention_required',
+          taskId: this.triageAgent?.currentTaskId || '',
+          error: `Triage escalation: ${action.reason}`,
+          question: `The triage observer recommends intervention:\n\n${action.reason}\n\nWhat would you like to do?`,
+        });
+        this.emitTriageState('escalated', action.reason);
+        break;
+      }
+    }
+  }
+
   private async executeTask(task: Task) {
     this.runningTasks.add(task.id);
     task.status = 'in_progress';
     this.failedTasks.delete(task.id);
+    if (this.triageAgent) this.triageAgent.currentTaskId = task.id;
 
     this.onEvent?.({ type: 'task_started', taskId: task.id, title: task.title });
 
@@ -165,6 +237,7 @@ export class Scheduler {
 
             this.completedTasks.add(task.id);
             this.onEvent?.({ type: 'task_completed', taskId: task.id, title: task.title });
+            await this.runTriageAnalysis();
           } else {
             log(`Task REJECTED by reviewer: ${updatedTask.title}. Feedback: ${review.feedback}`, 'WARN');
             if (!updatedTask.userGuidance) {
@@ -198,6 +271,7 @@ export class Scheduler {
 
           this.completedTasks.add(task.id);
           this.onEvent?.({ type: 'task_completed', taskId: task.id, title: task.title });
+          await this.runTriageAnalysis();
         }
       } else {
         await this.handleTaskFailure(updatedTask);
