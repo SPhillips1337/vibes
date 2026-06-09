@@ -40,16 +40,16 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [status, setStatus] = React.useState<'idle' | 'saved'>('idle');
 
   const fields: FieldDefinition[] = [
-    { label: 'Ollama Model', key: 'OLLAMA_MODEL', type: 'select' },
+    { label: 'Ollama Model', key: 'OLLAMA_MODEL', type: 'text' },
     { label: 'Base URL', key: 'OLLAMA_BASE_URL', type: 'text' },
     { label: 'API Key', key: 'OLLAMA_API_KEY', type: 'text' },
-    { label: 'Planner Model', key: 'PLANNER_MODEL', type: 'select' },
+    { label: 'Planner Model', key: 'PLANNER_MODEL', type: 'text' },
     { label: 'Planner Base URL', key: 'PLANNER_BASE_URL', type: 'text' },
     { label: 'Planner API Key', key: 'PLANNER_API_KEY', type: 'text' },
-    { label: 'Reviewer Model', key: 'REVIEWER_MODEL', type: 'select' },
+    { label: 'Reviewer Model', key: 'REVIEWER_MODEL', type: 'text' },
     { label: 'Reviewer Base URL', key: 'REVIEWER_BASE_URL', type: 'text' },
     { label: 'Reviewer API Key', key: 'REVIEWER_API_KEY', type: 'text' },
-    { label: 'Triage Model', key: 'TRIAGE_MODEL', type: 'select' },
+    { label: 'Triage Model', key: 'TRIAGE_MODEL', type: 'text' },
     { label: 'Triage Base URL', key: 'TRIAGE_BASE_URL', type: 'text' },
     { label: 'Triage API Key', key: 'TRIAGE_API_KEY', type: 'text' },
     { label: 'Context Window', key: 'CONTEXT_WINDOW', type: 'number' },
@@ -158,21 +158,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               </Text>
             </Box>
 
-            <Box paddingX={1}>
-              {field.type === 'select' && focusIndex === index ? (
-                <Select
-                  options={modelOptionsMap[field.key as string] || []}
-                  defaultValue={String(tempSettings[field.key] ?? '')}
-                  onChange={(val) => {
-                    if (val !== tempSettings[field.key]) {
-                      handleSave(field.key, val);
-                    }
-                  }}
-                />
-              ) : field.type === 'select' ? (
-                <Text color="gray">{String(tempSettings[field.key] || 'Same as main')}</Text>
-              ) : null}
-
+            <Box paddingX={1} flexDirection="column">
               {field.type === 'number' && focusIndex === index ? (
                 <Box borderStyle="single" borderColor="cyan" paddingX={1}>
                   <TextInput
@@ -186,16 +172,25 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               ) : null}
 
               {field.type === 'text' && focusIndex === index ? (
-                <Box borderStyle="single" borderColor="cyan" paddingX={1}>
-                  <TextInput
-                    defaultValue={String(tempSettings[field.key] ?? '')}
-                    onChange={(val) => setDraftValues(prev => ({ ...prev, [field.key]: val }))}
-                    onSubmit={(val) => handleSave(field.key, val)}
-                  />
+                <Box flexDirection="column">
+                  <Box borderStyle="single" borderColor="cyan" paddingX={1}>
+                    <TextInput
+                      defaultValue={String(tempSettings[field.key] ?? '')}
+                      onChange={(val) => setDraftValues(prev => ({ ...prev, [field.key]: val }))}
+                      onSubmit={(val) => handleSave(field.key, val)}
+                    />
+                  </Box>
+                  {field.key.includes('MODEL') && modelOptionsMap[field.key]?.length > 0 && (
+                    <Box marginTop={1} marginLeft={1}>
+                      <Text color="gray" dimColor>
+                        Available: {modelOptionsMap[field.key].map((o: any) => o.value).filter(Boolean).join(', ')}
+                      </Text>
+                    </Box>
+                  )}
                 </Box>
               ) : field.type === 'text' ? (
                 <Text color="gray">
-                  {field.key.includes('API_KEY') ? '********' : String(tempSettings[field.key] ?? '')}
+                  {field.key.includes('API_KEY') ? '********' : String(tempSettings[field.key] || (field.key.includes('MODEL') && field.key !== 'OLLAMA_MODEL' ? 'Same as main' : ''))}
                 </Text>
               ) : null}
 
