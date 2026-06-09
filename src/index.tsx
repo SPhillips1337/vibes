@@ -37,10 +37,6 @@ const App = () => {
 
   const { 
     settings, 
-    availableModels, 
-    availablePlannerModels,
-    availableReviewerModels,
-    availableTriageModels,
     saveSettings 
   } = useSettings();
   const closeSettings = React.useCallback(() => setView('dashboard'), []);
@@ -218,10 +214,6 @@ const App = () => {
         {view === 'settings' && (
           <SettingsView
             settings={settings}
-            availableModels={availableModels}
-            availablePlannerModels={availablePlannerModels}
-            availableReviewerModels={availableReviewerModels}
-            availableTriageModels={availableTriageModels}
             onSave={saveSettings}
             onClose={closeSettings}
           />

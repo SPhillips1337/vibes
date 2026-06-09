@@ -6,10 +6,6 @@ type SettingsShape = Record<string, string | number | boolean>;
 
 interface SettingsViewProps {
   settings: SettingsShape;
-  availableModels: string[];
-  availablePlannerModels?: string[];
-  availableReviewerModels?: string[];
-  availableTriageModels?: string[];
   onSave: (updates: Partial<SettingsShape>) => void;
   onClose: () => void;
   onToggleYoloMode?: (enabled: boolean) => void;
@@ -25,10 +21,6 @@ interface FieldDefinition {
 
 export const SettingsView: React.FC<SettingsViewProps> = ({
   settings,
-  availableModels,
-  availablePlannerModels = [],
-  availableReviewerModels = [],
-  availableTriageModels = [],
   onSave,
   onClose,
   onToggleYoloMode,
@@ -116,27 +108,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     }
   });
 
-  const createModelOptions = (models: string[], currentValue: any, isMain = false) => {
-    // Ensure the current value is always an option if the list is empty or doesn't include it
-    const opts = models.map((model) => ({ label: model, value: model }));
-    if (opts.length === 0 && currentValue) {
-      opts.push({ label: String(currentValue), value: String(currentValue) });
-    }
-    if (!isMain) {
-      opts.unshift({ label: 'Same as main', value: '' });
-    } else if (opts.length === 0) {
-      opts.push({ label: 'gemma2:9b', value: 'gemma2:9b' });
-    }
-    return opts;
-  };
-
-  const modelOptionsMap: Record<string, any[]> = {
-    OLLAMA_MODEL: createModelOptions(availableModels, tempSettings.OLLAMA_MODEL, true),
-    PLANNER_MODEL: createModelOptions(availablePlannerModels, tempSettings.PLANNER_MODEL),
-    REVIEWER_MODEL: createModelOptions(availableReviewerModels, tempSettings.REVIEWER_MODEL),
-    TRIAGE_MODEL: createModelOptions(availableTriageModels, tempSettings.TRIAGE_MODEL),
-  };
-
   const maxVisible = Math.max(5, (stdout.rows || 24) - 10);
   const startIdx = Math.max(0, Math.min(focusIndex - Math.floor(maxVisible / 2), fields.length - maxVisible));
 
@@ -180,13 +151,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                       onSubmit={(val) => handleSave(field.key, val)}
                     />
                   </Box>
-                  {field.key.includes('MODEL') && modelOptionsMap[field.key]?.length > 0 && (
-                    <Box marginTop={1} marginLeft={1}>
-                      <Text color="gray" dimColor>
-                        Available: {modelOptionsMap[field.key].map((o: any) => o.value).filter(Boolean).join(', ')}
-                      </Text>
-                    </Box>
-                  )}
                 </Box>
               ) : field.type === 'text' ? (
                 <Text color="gray">
