@@ -1,0 +1,325 @@
+{
+  "schemaVersion": "1.1.0",
+  "name": "Vibes",
+  "slug": "vibes",
+  "summary": "A high-performance terminal user interface (TUI) for planning and running autonomous AI agent workflows, built with Ink and React",
+  "version": "0.1.2",
+  "lastUpdated": "2026-06-09T00:00:00Z",
+  "repository": "https://github.com/SPhillips1337/vibes",
+  "license": "MIT",
+  "goals": [
+    "Deliver a responsive, keyboard-driven TUI for managing AI agent missions end-to-end",
+    "Support any OpenAI-compatible LLM backend (Ollama, LM Studio) with streaming, tool calls, and reasoning",
+    "Provide a DAG-based autonomous scheduler with parallel task execution and dependency resolution",
+    "Integrate deeply with MCP (Model Context Protocol) for external tool discovery and invocation",
+    "Maintain persistent long-term memory with structured taxonomy (semantic, episodic, procedural)",
+    "Augment agent context with Neo4j vector search (Codex RAG) for code pattern retrieval"
+  ],
+  "primary_features": [
+    "Hierarchical mission planning via LLM (goals → milestones → tasks)",
+    "Autonomous agent loop with streaming responses, tool calls, and reasoning-first thinking",
+    "DAG-based task scheduler with concurrent execution (up to 4 tasks) and dependency resolution",
+    "Interactive TUI with Dashboard, Mission Tree, Live Task View, Settings, and Log Stream",
+    "Built-in file system tools (read, write, edit, glob, grep, shell execution)",
+    "MCP (Model Context Protocol) integration with environment variable expansion in config",
+    "Structural codebase audit for pre-flight analysis (imports, dead code, prop checks)",
+    "Long-term memory with local JSONL backend or optional mem0ai remote storage"
+  ],
+  "secondary_features": [
+    "Triage agent for automatic error recovery and task re-routing",
+    "Multi-agent orchestration (Planner, Coder, Reviewer, Supervisor roles)",
+    "Codex RAG via Neo4j vector search for code pattern injection",
+    "Event hooks system (before_thinking, after_tool_call, on_error) with shell commands",
+    "Context compaction and token budget management for long-running sessions",
+    "Update notification with inline changelog viewer",
+    "Workspace undo (Alt+Z) via git hard-reset after failed missions",
+    "JSON repair utilities for LLM output sanitization"
+  ],
+  "tech_stack": {
+    "language": "TypeScript",
+    "runtime": "Node.js >=22",
+    "ui": "Ink 6 + React 19 + @inkjs/ui 2.0",
+    "llm_sdk": "OpenAI SDK v4 (compatible with Ollama, LM Studio)",
+    "build": "tsc",
+    "validation": "Zod 3.24",
+    "testing": "Node native --test with jsdom",
+    "memory": "Local JSONL or mem0ai (optional)",
+    "rag": "Neo4j vector search via Python subprocess (Codex RAG)"
+  },
+  "architecture": {
+    "overview": "React-based TUI using Ink for terminal rendering. The agent layer (mission-planner, scheduler, task-executor) orchestrates LLM-driven task execution with tool calls. MCP bridges external tool servers. Memory and Codex RAG enrich agent context. All state flows through React hooks to the Ink UI components.",
+    "components": {
+      "agent": {
+        "description": "Core agent engine: mission planning, DAG scheduling, task execution, review, and triage",
+        "implementation": "TypeScript classes with Zod-validated types",
+        "files": [
+          "src/agent/mission-planner.ts",
+          "src/agent/scheduler.ts",
+          "src/agent/task-executor.ts",
+          "src/agent/reviewer.ts",
+          "src/agent/triage-agent.ts",
+          "src/agent/structural-audit.ts",
+          "src/agent/intervention-manager.ts",
+          "src/agent/context-manager.ts"
+        ],
+        "status": "stable"
+      },
+      "tui": {
+        "description": "Terminal UI built with Ink 6 + React 19, providing keyboard-driven views for all mission phases",
+        "implementation": "React functional components with Ink primitives",
+        "files": [
+          "src/tui/components/dashboard.tsx",
+          "src/tui/components/mission-view.tsx",
+          "src/tui/components/task-view.tsx",
+          "src/tui/components/settings-view.tsx",
+          "src/tui/components/log-stream-view.tsx",
+          "src/tui/components/trace-view.tsx",
+          "src/tui/components/approval-view.tsx",
+          "src/tui/components/intervention-view.tsx",
+          "src/tui/hooks/use-mission.ts",
+          "src/tui/hooks/use-settings.ts"
+        ],
+        "status": "in_progress"
+      },
+      "mcp": {
+        "description": "Model Context Protocol integration for external tool discovery and invocation via stdio/SSE",
+        "implementation": "TypeScript (fastmcp) managing MCP subprocesses with env-var expansion",
+        "files": [
+          "src/mcp/mcp-service.ts",
+          "src/mcp/codex-service.ts",
+          "src/mcp/server.ts"
+        ],
+        "status": "stable"
+      },
+      "tools": {
+        "description": "Built-in agent tool registry: file operations, shell execution, code search, surgical editing",
+        "implementation": "TypeScript with Zod schema validation",
+        "files": [
+          "src/tools/file-tools.ts",
+          "src/tools/file-edit.ts",
+          "src/tools/shell-tool.ts",
+          "src/tools/index-tools.ts",
+          "src/tools/plugin-loader.ts"
+        ],
+        "status": "stable"
+      },
+      "memory": {
+        "description": "Long-term memory with local JSONL persistence or optional mem0ai remote backend, structured as semantic/episodic/procedural",
+        "implementation": "TypeScript with memory taxonomy and token-budget-aware retrieval",
+        "files": [
+          "src/memory/memory-service.ts",
+          "src/memory/local-memory.ts"
+        ],
+        "status": "stable"
+      },
+      "multiAgent": {
+        "description": "Parallel multi-agent orchestration with distinct roles: Planner, Coder, Reviewer, Supervisor",
+        "implementation": "TypeScript with sub-agent lifecycle management",
+        "files": [
+          "src/agents/multi-agent.ts"
+        ],
+        "status": "experimental"
+      }
+    }
+  },
+  "development_plan": {
+    "currentPhase": 2,
+    "phases": [
+      {
+        "number": 1,
+        "name": "Core Agent & Scheduler",
+        "description": "Hierarchical planning, DAG scheduling, task execution loop, file tools, MCP integration",
+        "tasks": [
+          { "name": "Mission planner (LLM-based plan decomposition)", "status": "completed" },
+          { "name": "DAG scheduler with concurrent execution", "status": "completed" },
+          { "name": "Task executor with streaming + tool calls", "status": "completed" },
+          { "name": "File tools (read/write/edit/glob/grep/shell)", "status": "completed" },
+          { "name": "MCP service with env-var config", "status": "completed" },
+          { "name": "Context management + compaction", "status": "completed" }
+        ]
+      },
+      {
+        "number": 2,
+        "name": "TUI Polish & User Experience",
+        "description": "Refined keyboard navigation, settings editor, log views, trace inspection, intervention flow",
+        "tasks": [
+          { "name": "Dashboard with progress visualization", "status": "completed" },
+          { "name": "Mission tree view", "status": "completed" },
+          { "name": "Live task view with tool call groups", "status": "completed" },
+          { "name": "Settings editor with inline update", "status": "completed" },
+          { "name": "Log stream + trace views", "status": "completed" },
+          { "name": "Intervention/approval prompt views", "status": "completed" },
+          { "name": "Enhanced TextInput with controlled props", "status": "completed" },
+          { "name": "Panel focus cycling (Tab)", "status": "in_progress" }
+        ]
+      },
+      {
+        "number": 3,
+        "name": "Reliability, Memory & Multi-Agent",
+        "description": "Long-term memory, multi-agent orchestration, Codex RAG, triage agent hardening",
+        "tasks": [
+          { "name": "Long-term memory (local JSONL + mem0ai)", "status": "completed" },
+          { "name": "Codex RAG (Neo4j vector search)", "status": "completed" },
+          { "name": "Triage agent for error recovery", "status": "completed" },
+          { "name": "Multi-agent orchestration", "status": "completed" },
+          { "name": "Structural audit pre-flight checks", "status": "completed" },
+          { "name": "Adversarial audit", "status": "pending" },
+          { "name": "Session persistence and resume", "status": "in_progress" }
+        ]
+      }
+    ]
+  },
+  "todo": [
+    { "id": "T1", "title": "Harden session persistence with resume across restarts", "status": "in_progress", "priority": "high" },
+    { "id": "T2", "title": "Implement adversarial audit phase", "status": "pending", "priority": "medium" },
+    { "id": "T3", "title": "Add keyboard shortcut hints in all view headers", "status": "pending", "priority": "medium" },
+    { "id": "T4", "title": "Panel focus cycling polish (Tab between views)", "status": "in_progress", "priority": "medium" },
+    { "id": "T5", "title": "Write comprehensive test suite for agent loop", "status": "pending", "priority": "medium" },
+    { "id": "T6", "title": "Update README with current keyboard shortcut table", "status": "pending", "priority": "low" },
+    { "id": "T7", "title": "CI/CD pipeline for npm publish", "status": "pending", "priority": "low" }
+  ],
+  "files_of_interest": [
+    "src/agent/scheduler.ts",
+    "src/agent/task-executor.ts",
+    "src/agent/mission-planner.ts",
+    "src/tui/components/dashboard.tsx",
+    "src/tui/components/task-view.tsx",
+    "src/mcp/mcp-service.ts",
+    "src/mcp/codex-service.ts",
+    "src/tools/file-tools.ts",
+    "src/tools/file-edit.ts",
+    "src/memory/memory-service.ts",
+    "src/agents/multi-agent.ts"
+  ],
+  "api_endpoints": [],
+  "external_services": {
+    "ollama": "localhost:11434 (or remote endpoint)",
+    "lm_studio": "192.168.5.157:1234 (dev instance)",
+    "neo4j": "neo4j.happymonkey.ai:7687 (Codex RAG knowledge graph)",
+    "github": "api.github.com (MCP integration)",
+    "perplexity": "api.perplexity.ai (MCP search)"
+  },
+  "required_env": [
+    "OLLAMA_BASE_URL",
+    "OLLAMA_MODEL",
+    "OLLAMA_API_KEY",
+    "CONTEXT_WINDOW",
+    "MAX_STEPS",
+    "MAX_CONCURRENT_TASKS",
+    "ENABLE_REVIEWER",
+    "YOLO_MODE",
+    "THINKING_MODE",
+    "MEMORY_ENABLED",
+    "CODEX_ENABLED",
+    "NEO4J_URI",
+    "NEO4J_USERNAME",
+    "NEO4J_PASSWORD",
+    "GITHUB_PERSONAL_ACCESS_TOKEN",
+    "PERPLEXITY_API_KEY"
+  ],
+  "current_capabilities": [
+    "Full mission lifecycle: plan → approve → execute → review → complete",
+    "Autonomous agent ReAct loop with streaming, tool calling, and structured outputs",
+    "DAG-based scheduling with up to 4 concurrent tasks and dependency resolution",
+    "Multi-pane terminal UI with keyboard navigation (Alt+keys)",
+    "Git auto-snapshot before missions, undo via hard-reset",
+    "MCP tool integration (GitHub, Perplexity, Neo4j, sequential-thinking)",
+    "Structural codebase audit (imports, dead code, prop mismatches)",
+    "Long-term memory with semantic/episodic/procedural taxonomy",
+    "Codex RAG via Neo4j vector search for code pattern augmentation",
+    "Context window compaction to stay within model limits",
+    "JSON output repair and sanitization for LLM responses"
+  ],
+  "next_steps": [
+    "Complete session persistence with full resume support",
+    "Polish panel focus cycling and keyboard shortcut hints",
+    "Implement adversarial audit phase for critical missions",
+    "Write and expand test coverage (unit + integration)",
+    "Set up CI/CD for automated validation and npm publishing"
+  ],
+  "key_files": {
+    "src/index.tsx": "TUI entry point and app shell",
+    "src/vibes-cli.ts": "CLI entry point for the vibes command",
+    "src/agent/scheduler.ts": "DAG mission scheduler orchestrating all task execution",
+    "src/agent/task-executor.ts": "Core agent loop (system prompt → tool calls → response)",
+    "src/agent/mission-planner.ts": "LLM-based plan decomposition into milestones and tasks",
+    "src/tui/components/dashboard.tsx": "Mission progress dashboard",
+    "src/tui/components/task-view.tsx": "Live task execution view with tool call groups",
+    "src/mcp/mcp-service.ts": "MCP subprocess manager and tool discovery",
+    "src/mcp/codex-service.ts": "Neo4j Codex RAG integration",
+    "src/tools/file-tools.ts": "File system tools for the agent",
+    "src/memory/memory-service.ts": "Long-term memory abstraction layer",
+    "src/agents/multi-agent.ts": "Parallel multi-agent orchestration",
+    "AGENTS.md": "Full developer agent constitution",
+    ".antigravity/memories/": "Persistent long-term memory store",
+    ".vibes/config.json": "Active runtime configuration"
+  },
+  "security_considerations": [
+    "API keys stored in .env (never committed) with .env.example as template",
+    "MCP config supports ${VARIABLE} expansion from .env — no hardcoded secrets",
+    "Git auto-snapshot before missions enables safe undo",
+    "Structural audit includes security-relevant checks",
+    "project.json itself should NOT be deployed to production — contains sensitive architectural info"
+  ],
+  "open_questions": [
+    "Should we adopt a dedicated state machine library for the agent loop?",
+    "What's the right compaction strategy for 128K+ token models?",
+    "Should multi-agent mode become the default for complex missions?",
+    "How to best handle model fallback when primary LLM is unreachable?"
+  ],
+  "contact": {
+    "author": "Stephen Phillips",
+    "repository": "https://github.com/SPhillips1337/vibes"
+  },
+  "how_to_run_locally": {
+    "install": "npm install",
+    "configure": "cp .env.example .env and edit OLLAMA_* vars",
+    "dev": "npm run dev",
+    "build": "npm run build && npm start",
+    "cli": "npm run build && node dist/vibes-cli.js"
+  },
+  "status": "in_progress",
+  "current_goals": [
+    "Harden session persistence with resume support",
+    "Polish TUI keyboard navigation and focus handling",
+    "Expand test coverage for agent and scheduler modules"
+  ],
+  "features": {
+    "completed": [
+      "Mission planning via LLM",
+      "DAG scheduler with concurrent execution",
+      "Agent ReAct loop with streaming",
+      "File tools (read/write/edit/glob/grep/shell)",
+      "MCP integration with env-var expansion",
+      "Dashboard, Mission View, Task View, Settings",
+      "Long-term memory (local + mem0ai)",
+      "Codex RAG (Neo4j vector search)",
+      "Triage agent for error recovery",
+      "Structural audit pre-flight checks",
+      "Context compaction",
+      "Intervention/approval views",
+      "JSON output repair"
+    ],
+    "demo_ready": [
+      "Full mission lifecycle with planner + scheduler + executor",
+      "Interactive TUI with keyboard shortcuts",
+      "MCP server integration",
+      "Git auto-snapshot and undo"
+    ],
+    "future_enhancements": [
+      "Adversarial audit phase",
+      "Built-in diff view for file edits",
+      "Session resume across restarts",
+      "Plugin marketplace UI",
+      "Fine-grained model routing per task type"
+    ]
+  },
+  "progress_percent": 70,
+  "progress_state": "core stable, TUI maturing",
+  "next_version_goals": [
+    "Session persistence and resume",
+    "Adversarial audit",
+    "CI/CD pipeline",
+    "Keyboard shortcut hints in headers"
+  ]
+}
