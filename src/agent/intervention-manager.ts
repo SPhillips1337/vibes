@@ -27,7 +27,8 @@ Output ONLY the question text for the user. Keep it friendly and concise.`;
         temperature: 0.7,
       }, { timeout: 10000 }); // 10s timeout
 
-      return response.choices[0]?.message?.content || `The task "${task.title}" failed with error: ${error}. How would you like to proceed?`;
+      const msg = response.choices[0]?.message as any;
+      return msg?.content || msg?.reasoning_content || `The task "${task.title}" failed with error: ${error}. How would you like to proceed?`;
     } catch (err: any) {
       log(`Failed to formulate intervention question: ${err.message}`, 'ERROR');
       return `The task "${task.title}" failed with error: ${error}. How would you like to proceed?`;

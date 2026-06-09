@@ -15,6 +15,7 @@ import {
   estimateMessagesTokens,
 } from './context-manager.js';
 import { compact } from './compaction/compaction.js';
+import { getModelSpecificPrompt } from './model-prompts.js';
 
 /** Type guard — narrows `BeforeToolCallResult | void | undefined` to `BeforeToolCallResult`. */
 function isBlockResult(v: BeforeToolCallResult | void | undefined): v is BeforeToolCallResult {
@@ -194,10 +195,6 @@ export class TaskExecutor {
     isError: boolean,
     assistantMessage: any,
   ): Promise<ToolResult> {
-    // Default: record memory
-    if (isError && this.memory.isEnabled()) {
-      await this.memory.addToolUsage(toolCall.function.name, args, result).catch(() => {});
-    }
     if (!this.hooks?.afterToolCall) return result;
 
     try {
@@ -277,6 +274,11 @@ export class TaskExecutor {
     const isYolo = getYoloMode();
     const skillsSection = this.skills.formatForSystemPrompt();
 
+    // Determine the target model before prompt construction.
+    const isReviewerModel = task.use_reviewer_model && config.ENABLE_REVIEWER;
+    const resolvedTaskModel = isReviewerModel ? config.REVIEWER_MODEL : getModel();
+    const modelSpecificPrompt = getModelSpecificPrompt(resolvedTaskModel, 'executor');
+
     // Codex Context: Retrieve relevant patterns from Neo4j knowledge graph
     let codexSection = '';
     const codex = getCodexService();
@@ -337,6 +339,7 @@ Rules:
 Only call one tool at a time when using the fallback format.
 [ignoring loop detection]
 ${projectRules}
+${modelSpecificPrompt}
 
 Skills:
 ${skillsSection}
@@ -377,7 +380,16 @@ ${memoriesSection}`;
         // Fix 1: Hard cap by message count — force compaction regardless of token budget.
         // Prevents unbounded JS heap growth when many steps with small outputs accumulate.
         // MSG_HARD_CAP of 150 retains head (2) + summary + ample tail while bounding the array.
-        const MSG_HARD_CAP = 150;
+        /** Format a tool result for the LLM message stream.
+ *  String data → plain text (preserves actual newlines).
+ *  Structured data → JSON (fallback for arrays/objects). */
+function formatToolResult(result: ToolResult): string {
+  if (!result.success) return `Error: ${result.error}`;
+  if (typeof result.data === 'string') return result.data;
+  return JSON.stringify(result);
+}
+
+const MSG_HARD_CAP = 150;
         if (messages.length > MSG_HARD_CAP) {
           log(`Message hard-cap hit (${messages.length} msgs): forcing compaction`, 'WARN');
           messages = compressMessages(messages, true);
@@ -400,10 +412,18 @@ ${memoriesSection}`;
         log(`Context usage: ~${stats.used}/${stats.usable} tokens (${stats.percentage}%) [step ${step + 1}/${currentMax}]`, 'DEBUG');
         onEvent?.({ type: 'context_update', used: stats.used, total: stats.total, percentage: stats.percentage });
 
+        // Steering: inject live triage guidance before this turn
+        const steerMsg = await this.hooks?.getSteeringMessage?.();
+        if (steerMsg) {
+          log(`Injecting live steering: ${steerMsg.slice(0, 80)}...`, 'INFO');
+          messages.push({ role: 'user', content: `[TRIAGE]: ${steerMsg}` });
+        }
+
         // LLM call
-        const taskModel = task.use_reviewer_model && config.ENABLE_REVIEWER ? config.REVIEWER_MODEL : getModel();
-        log(`Using model: ${taskModel} ${task.use_reviewer_model ? '(Reviewer model requested)' : ''}`, 'DEBUG');
-        const response = await getOllamaClient().chat.completions.create({
+        const isReviewerModel = task.use_reviewer_model && config.ENABLE_REVIEWER;
+        const taskModel = isReviewerModel ? config.REVIEWER_MODEL : getModel();
+        log(`Using model: ${taskModel} ${isReviewerModel ? '(Reviewer model requested)' : ''}`, 'DEBUG');
+        const response = await getOllamaClient(isReviewerModel ? 'reviewer' : 'main').chat.completions.create({
           model: taskModel,
           messages,
           tools: this.tools.map(toOpenAITool),
@@ -415,9 +435,14 @@ ${memoriesSection}`;
 
         // ── Reasoning extraction + strip ───────────────────────────
         // FIX: extract thinking content (reasoning field or <think> blocks)
+        // Some models (Gemma QAT, DeepSeek-R1, phi-4-reasoning) emit reasoning
+        // in `reasoning_content` or `reasoning` with empty `content`.
         let thinkingContent: string | undefined;
-        if ((message as any).reasoning) {
-          thinkingContent = (message as any).reasoning;
+        const rawMsg = message as any;
+        if (rawMsg.reasoning) {
+          thinkingContent = rawMsg.reasoning;
+        } else if (rawMsg.reasoning_content) {
+          thinkingContent = rawMsg.reasoning_content;
         }
         if (typeof message.content === 'string' && message.content.includes('<think>')) {
           const thinkMatch = message.content.match(/<think>([\s\S]*?)<\/think>/);
@@ -438,9 +463,14 @@ ${memoriesSection}`;
             content: message.content.replace(/<think>[\s\S]*?<\/think>/g, '').trim(),
           } as any;
         }
-        if ((message as any).reasoning) {
-          delete (message as any).reasoning;
+        // If content is empty but reasoning_content carries the visible response (no tool calls),
+        // promote it so text-only answers aren't lost.
+        if (!message.content && rawMsg.reasoning_content && !message.tool_calls?.length) {
+          message = { ...message, content: rawMsg.reasoning_content } as any;
         }
+        // Strip both reasoning variants before persisting to context
+        delete (message as any).reasoning;
+        delete (message as any).reasoning_content;
         // ── Manual/Markdown Tool Call Fallback ──────────────────────
         if (!message.tool_calls?.length && typeof message.content === 'string' && message.content.trim()) {
           const manualCalls = parseMarkdownToolCalls(message.content);
@@ -532,14 +562,6 @@ ${memoriesSection}`;
                 messages.push({ role: 'tool', tool_call_id: toolCall.id, content: JSON.stringify(preResult) });
                 continue;
               }
-
-              // afterToolCall hook preflight (run per-tool by default, still sequential)
-              try {
-                await this.invokeAfterToolCall(tool, toolCall, validatedArgs, preResult, true, message);
-              } catch (hookErr: any) {
-                // Non-fatal: log but carry on
-                log(`afterToolCall hook error [${toolCall.function.name}]: ${hookErr.message}`, 'WARN');
-              }
             } catch (err: any) {
               preResult = { success: false, error: err.message || 'Tool execution error' };
               execError = err.message || 'Tool execution error';
@@ -614,9 +636,10 @@ ${memoriesSection}`;
                 const entry   = preflight[i];
                 const result  = results as ToolResult[];
 
-                onEvent?.({ type: 'tool_result', tool: entry.toolCall.function.name, result: result[i] });
-                logObject(`Tool Result [${entry.toolCall.function.name}] (parallel, ${elapsedMs} ms total)`, result[i]);
-                const resultStr = JSON.stringify(result[i]);
+                const r = result[i];
+                onEvent?.({ type: 'tool_result', tool: entry.toolCall.function.name, result: r });
+                logObject(`Tool Result [${entry.toolCall.function.name}] (parallel, ${elapsedMs} ms total)`, r);
+                const resultStr = formatToolResult(r);
                 const truncatedResult = truncateToolResult(resultStr, entry.toolCall.function.name);
                 messages.push({
                   role: 'tool',
@@ -627,11 +650,11 @@ ${memoriesSection}`;
             } else {
               // ── SEQUENTIAL pass ─────────────────────────────────────────────────
               for (const entry of preflight) {
-                const result = await entry.run();
-                turnResults.push(result);
-                onEvent?.({ type: 'tool_result', tool: entry.toolCall.function.name, result });
-                logObject(`Tool Result [${entry.toolCall.function.name}]`, result);
-                const resultStr = JSON.stringify(result);
+                const res = await entry.run();
+                turnResults.push(res);
+                onEvent?.({ type: 'tool_result', tool: entry.toolCall.function.name, result: res });
+                logObject(`Tool Result [${entry.toolCall.function.name}]`, res);
+                const resultStr = formatToolResult(res);
                 const truncatedResult = truncateToolResult(resultStr, entry.toolCall.function.name);
                 messages.push({
                   role: 'tool',

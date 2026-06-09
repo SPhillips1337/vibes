@@ -8,7 +8,9 @@
   "CODEX_ENABLED": true,
   "CODEX_TOP_K": 3,
   "REVIEWER_MODEL": "google/gemma-4-12b-qat",
-  "THINKING_MODE": true,
+  "THINKING_MODE": false,
   "MAX_STEPS": 100,
-  "MEMORY_USER_ID": "test17"
+  "MEMORY_USER_ID": "test18",
+  "TRIAGE_ENABLED": true,
+  "TRIAGE_MODEL": "qwen3.5-2b-kimi-and-opus-distillation-i1"
 }
