@@ -106,7 +106,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     }
   });
 
-  const maxVisible = Math.max(5, (stdout.rows || 24) - 10);
+  const maxVisible = Math.max(5, (stdout.rows || 24) - 15);
   const [startIdx, setStartIdx] = React.useState(0);
 
   // Maintain a stable scrolling window that only shifts when focus hits the edges
