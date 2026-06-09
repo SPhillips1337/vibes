@@ -38,6 +38,9 @@ export class Scheduler {
 
   triageAgent?: TriageAgent;
   private pendingSteerMessage = '';
+  private lastTriageTime = 0;
+  private static readonly TRIAGE_WALL_CLOCK_MS = 30000;
+  private lastEmittedTriageState: string = '';
 
   constructor(mission: Mission, executor: TaskExecutor, onEvent?: OnEvent, getYoloMode: () => boolean = () => config.YOLO_MODE) {
     this._mission = mission;
@@ -110,6 +113,17 @@ export class Scheduler {
         }
       }
 
+      // Wall-clock periodic triage check (30s)
+      if (this.triageAgent && Date.now() - this.lastTriageTime >= Scheduler.TRIAGE_WALL_CLOCK_MS) {
+        this.lastTriageTime = Date.now();
+        try {
+          const action = await this.triageAgent.analyzeTimeBased();
+          await this.handleTriageAction(action);
+        } catch (err: any) {
+          log(`Triage time-based analysis error: ${err.message}`, 'WARN');
+        }
+      }
+
       await new Promise(resolve => setTimeout(resolve, 500));
     }
 
@@ -153,16 +167,26 @@ export class Scheduler {
     }
   }
 
+  private emitTriageState(state: 'watching' | 'guiding' | 'escalated', message?: string) {
+    if (this.lastEmittedTriageState === state) return;
+    this.lastEmittedTriageState = state;
+    this.onEvent?.({ type: 'triage_state', state, message });
+  }
+
   private async handleTriageAction(action: TriageAction) {
     switch (action.type) {
-      case 'continue':
+      case 'continue': {
+        this.emitTriageState('watching');
         break;
+      }
       case 'compress':
         log(`Triage: ${action.reason}`, 'INFO');
+        this.emitTriageState('watching', action.reason);
         break;
       case 'steer':
         log(`Triage: steering next task — ${action.message}`, 'INFO');
         this.pendingSteerMessage = action.message;
+        this.emitTriageState('guiding', action.message);
         break;
       case 'escalate': {
         log(`Triage: escalation — ${action.reason}`, 'WARN');
@@ -173,6 +197,7 @@ export class Scheduler {
           error: `Triage escalation: ${action.reason}`,
           question: `The triage observer recommends intervention:\n\n${action.reason}\n\nWhat would you like to do?`,
         });
+        this.emitTriageState('escalated', action.reason);
         break;
       }
     }

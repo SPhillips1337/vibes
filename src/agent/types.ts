@@ -75,7 +75,8 @@ export type ExecutionEvent =
   | { type: 'task_completed'; taskId: string; title: string }
   | { type: 'task_failed'; taskId: string; title: string; error: string }
   | { type: 'system_log'; level: 'INFO' | 'WARN' | 'ERROR' | 'DEBUG'; message: string; timestamp: string }
-  | { type: 'timeout_warning'; thresholdSeconds: number; durationSeconds: number };
+  | { type: 'timeout_warning'; thresholdSeconds: number; durationSeconds: number }
+  | { type: 'triage_state'; state: 'watching' | 'guiding' | 'escalated'; message?: string };
 
 export type OnEvent = (event: ExecutionEvent) => void;
 

@@ -51,6 +51,7 @@ const TRIAGE_FUNCTION_SCHEMA = {
 
 const THRASH_TOOL_FAIL_THRESHOLD = 3;
 const LOOP_SAME_TOOL_THRESHOLD = 4;
+const CYCLE_READ_WRITE_THRESHOLD = 3;
 const CONTEXT_HIGH_PRESSURE = 0.9;
 const CONTEXT_READINGS_BEFORE_FLAG = 3;
 const TURN_EXHAUSTION_RATIO = 0.8;
@@ -60,6 +61,7 @@ const GUIDANCE_TOOL_FAIL = `You have called the same tool multiple times and it 
 const GUIDANCE_TOOL_LOOP = `You are repeating the same tool call without making progress. Step back and try a different strategy.`;
 const GUIDANCE_CONTEXT_PRESSURE = `Context window is getting full. Consider completing the current subtask and providing a summary rather than starting new work.`;
 const GUIDANCE_TURN_EXHAUSTION = `You are approaching the step limit. Wrap up the current task with whatever you have.`;
+const GUIDANCE_CYCLE_REPEAT = `You have created several components in a row. If the task criteria are met, provide a summary and stop rather than looking for more things to build.`;
 
 interface TriageSnapshot {
   toolFailures: Map<string, number>;
@@ -79,6 +81,9 @@ export class TriageAgent {
   /** Last N tool calls (name only) for loop detection. */
   private recentToolCalls: string[] = [];
 
+  /** Last N tool call details with args for cycle detection. */
+  private recentToolCallDetails: { name: string; args?: Record<string, any> }[] = [];
+
   private snapshots = new Map<string, TriageSnapshot>();
   private completedTaskCount = 0;
   private autoSteer: boolean;
@@ -96,12 +101,15 @@ export class TriageAgent {
       errorLogCount: 0,
     });
     this.recentToolCalls = [];
+    this.recentToolCallDetails = [];
     this.pendingSteerMessage = '';
   }
 
-  recordToolCall(toolName: string) {
+  recordToolCall(toolName: string, args?: Record<string, any>) {
     this.recentToolCalls.push(toolName);
     if (this.recentToolCalls.length > 12) this.recentToolCalls.shift();
+    this.recentToolCallDetails.push({ name: toolName, args });
+    if (this.recentToolCallDetails.length > 30) this.recentToolCallDetails.shift();
   }
 
   recordToolFailure(taskId: string, toolName: string) {
@@ -176,13 +184,44 @@ export class TriageAgent {
       log(`Triage live: turn exhaustion ${(turnRatio * 100).toFixed(0)}%`, 'WARN');
       return;
     }
+
+    // 5. Re-read+create cycle detection: research tool(s) → action tool repeated N times
+    //    without the model concluding (text-only summary).  E.g. file_read → file_write
+    //    cycle 3+ times = tail-chasing.
+    const readTools = new Set(['file_read', 'glob', 'grep', 'list_dir', 'list_files', 'search', 'read']);
+    const writeTools = new Set(['file_write', 'file_edit', 'write']);
+    let cycles = 0;
+    let sawResearch = false;
+    for (const entry of this.recentToolCallDetails) {
+      if (readTools.has(entry.name)) {
+        sawResearch = true;
+      } else if (writeTools.has(entry.name) && sawResearch) {
+        cycles++;
+        sawResearch = false;
+      }
+    }
+    if (cycles >= CYCLE_READ_WRITE_THRESHOLD) {
+      this.pendingSteerMessage = GUIDANCE_CYCLE_REPEAT;
+      log(`Triage live: re-read+create cycle detected (${cycles} cycles)`, 'WARN');
+      return;
+    }
   }
 
   async analyzeBetweenTasks(): Promise<TriageAction> {
     this.completedTaskCount++;
-    const shouldAnalyze = this.completedTaskCount % config.TRIAGE_INTERVAL === 0;
-    if (!shouldAnalyze || this.snapshots.size === 0) return { type: 'continue' };
+    if (this.completedTaskCount % config.TRIAGE_INTERVAL !== 0) return { type: 'continue' };
+    const action = await this.evaluateSnapshots();
+    this.snapshots.clear();
+    return action;
+  }
 
+  /** Time-based analysis — doesn't increment task counter or clear snapshots. */
+  async analyzeTimeBased(): Promise<TriageAction> {
+    if (this.snapshots.size === 0) return { type: 'continue' };
+    return this.evaluateSnapshots();
+  }
+
+  private async evaluateSnapshots(): Promise<TriageAction> {
     let totalToolFailures = 0;
     let maxConsecutiveFailures = 0;
     let worstTool = '';
@@ -212,9 +251,6 @@ export class TriageAgent {
     const hasToolThrash = maxConsecutiveFailures >= THRASH_TOOL_FAIL_THRESHOLD;
     const hasTurnExhaustion = maxTurnRatio >= TURN_EXHAUSTION_RATIO;
     const hasLogErrors = totalLogErrors >= LOG_ERROR_THRESHOLD;
-
-    // Always clear snapshots so each analysis is a fresh window
-    this.snapshots.clear();
 
     if (!hasToolThrash && !hasTurnExhaustion && !hasLogErrors) {
       if (hasHighPressure) {
@@ -275,7 +311,8 @@ export class TriageAgent {
         max_tokens: 150,
         temperature: 0,
       });
-      const text = response.choices[0]?.message?.content || '';
+      const msg = response.choices[0]?.message as any;
+      const text = msg?.content || msg?.reasoning_content || '';
       const extracted = extractJsonContent(text);
       if (extracted) {
         const parsed = JSON.parse(extracted);
@@ -318,7 +355,7 @@ export function withTriageHooks(
     async afterToolCall(ctx: AfterToolCallContext) {
       const baseResult = await baseHooks.afterToolCall?.(ctx);
       const toolName = (ctx.toolCall as any)?.function?.name || 'unknown';
-      triage.recordToolCall(toolName);
+      triage.recordToolCall(toolName, (ctx.toolCall as any)?.function?.arguments);
       if (triage.currentTaskId && !ctx.result?.success) {
         triage.recordToolFailure(triage.currentTaskId, toolName);
       }

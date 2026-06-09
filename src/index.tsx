@@ -23,7 +23,7 @@ const App = () => {
   const {
     mission, pendingMission, isPlanning, isExecuting,
     error, events, contextUsage, pendingIntervention, activeMaxSteps,
-    isYoloMode, toggleYoloMode, sessions,
+    isYoloMode, toggleYoloMode, sessions, triageState,
     startMission, approveMission, rejectMission, resolveIntervention, resetMission, undoMission,
     loadSession, deleteSession,
   } = useMission();
@@ -224,6 +224,7 @@ const App = () => {
             isExecuting={isExecuting}
             isYoloMode={isYoloMode}
             contextUsage={contextUsage}
+            triageState={triageState}
           />
         )}
 

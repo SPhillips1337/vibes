@@ -56,7 +56,14 @@ export function EnhancedTextInput({ defaultValue = '', placeholder = '', onChang
       return;
     }
     if (key.delete) {
-      if (cursorOffset < value.length) {
+      // If cursor is at end, this is probably a terminal that maps Backspace
+      // to key.delete — treat as backward-delete instead of no-op.
+      if (cursorOffset >= value.length) {
+        if (cursorOffset > 0) {
+          setValue(prev => prev.slice(0, cursorOffset - 1) + prev.slice(cursorOffset));
+          setCursorOffset(prev => prev - 1);
+        }
+      } else {
         setValue(prev => prev.slice(0, cursorOffset) + prev.slice(cursorOffset + 1));
       }
       return;

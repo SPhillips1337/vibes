@@ -27,8 +27,18 @@ const httpsAgent = new HttpsKeepAliveAgent({
 export const getModel = () => config.OLLAMA_MODEL;
 export const getContextWindow = () => config.CONTEXT_WINDOW;
 
+let cachedClient: OpenAI | null = null;
+let cachedBaseUrl = '';
+let cachedApiKey = '';
+
 export const getOllamaClient = (): OpenAI => {
-  return new OpenAI({
+  if (cachedClient && cachedBaseUrl === config.OLLAMA_BASE_URL && cachedApiKey === config.OLLAMA_API_KEY) {
+    return cachedClient;
+  }
+
+  cachedBaseUrl = config.OLLAMA_BASE_URL;
+  cachedApiKey = config.OLLAMA_API_KEY;
+  cachedClient = new OpenAI({
     baseURL: config.OLLAMA_BASE_URL,
     apiKey: config.OLLAMA_API_KEY,
     timeout: 120000, // 2 minute timeout
@@ -38,6 +48,8 @@ export const getOllamaClient = (): OpenAI => {
       return fetch(url, { ...init, agent });
     },
   });
+
+  return cachedClient;
 };
 
 export function formatModelProviderError(error: unknown): string {

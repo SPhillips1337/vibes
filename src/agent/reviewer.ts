@@ -41,7 +41,8 @@ ${task.output || 'No output provided.'}`;
         temperature: 0.1,
       });
 
-      const content = response.choices[0]?.message?.content;
+      const msg = response.choices[0]?.message as any;
+      const content = msg?.content || msg?.reasoning_content || '';
       if (!content) throw new Error('No response from reviewer');
 
       const result = JSON.parse(content);

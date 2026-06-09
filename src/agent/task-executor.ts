@@ -431,9 +431,14 @@ const MSG_HARD_CAP = 150;
 
         // ── Reasoning extraction + strip ───────────────────────────
         // FIX: extract thinking content (reasoning field or <think> blocks)
+        // Some models (Gemma QAT, DeepSeek-R1, phi-4-reasoning) emit reasoning
+        // in `reasoning_content` or `reasoning` with empty `content`.
         let thinkingContent: string | undefined;
-        if ((message as any).reasoning) {
-          thinkingContent = (message as any).reasoning;
+        const rawMsg = message as any;
+        if (rawMsg.reasoning) {
+          thinkingContent = rawMsg.reasoning;
+        } else if (rawMsg.reasoning_content) {
+          thinkingContent = rawMsg.reasoning_content;
         }
         if (typeof message.content === 'string' && message.content.includes('<think>')) {
           const thinkMatch = message.content.match(/<think>([\s\S]*?)<\/think>/);
@@ -454,9 +459,14 @@ const MSG_HARD_CAP = 150;
             content: message.content.replace(/<think>[\s\S]*?<\/think>/g, '').trim(),
           } as any;
         }
-        if ((message as any).reasoning) {
-          delete (message as any).reasoning;
+        // If content is empty but reasoning_content carries the visible response (no tool calls),
+        // promote it so text-only answers aren't lost.
+        if (!message.content && rawMsg.reasoning_content && !message.tool_calls?.length) {
+          message = { ...message, content: rawMsg.reasoning_content } as any;
         }
+        // Strip both reasoning variants before persisting to context
+        delete (message as any).reasoning;
+        delete (message as any).reasoning_content;
         // ── Manual/Markdown Tool Call Fallback ──────────────────────
         if (!message.tool_calls?.length && typeof message.content === 'string' && message.content.trim()) {
           const manualCalls = parseMarkdownToolCalls(message.content);

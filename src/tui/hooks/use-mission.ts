@@ -25,6 +25,7 @@ export const useMission = () => {
   const [activeMaxSteps, setActiveMaxSteps] = useState(config.MAX_STEPS);
   const [isYoloMode, setIsYoloMode] = useState(config.YOLO_MODE);
   const [sessions, setSessions] = useState<SessionData[]>([]);
+  const [triageState, setTriageState] = useState<{ state: 'watching' | 'guiding' | 'escalated'; message?: string } | null>(null);
 
   // Hold a direct ref to the running scheduler so we can resolve interventions on it
   const schedulerRef = useRef<Scheduler | null>(null);
@@ -171,6 +172,9 @@ export const useMission = () => {
         if (event.type === 'steps_updated') {
           setActiveMaxSteps(config.MAX_STEPS + event.extraSteps);
         }
+        if (event.type === 'triage_state') {
+          setTriageState({ state: event.state, message: event.message });
+        }
 
         // Buffer events and flush periodically to avoid re-render storming
         eventBufferRef.current.push(event);
@@ -280,6 +284,7 @@ export const useMission = () => {
     activeMaxSteps,
     isYoloMode,
     sessions,
+    triageState,
     startMission,
     approveMission,
     rejectMission,
