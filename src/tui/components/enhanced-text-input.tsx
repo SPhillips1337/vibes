@@ -5,11 +5,21 @@ import chalk from 'chalk';
 interface Props {
   defaultValue?: string;
   placeholder?: string;
+  maxWidth?: number;
   onChange?: (value: string) => void;
   onSubmit?: (value: string) => void;
 }
 
-export function EnhancedTextInput({ defaultValue = '', placeholder = '', onChange, onSubmit }: Props) {
+export function getInputViewport(valueLength: number, cursorOffset: number, maxWidth?: number) {
+  if (!maxWidth) return { start: 0, end: valueLength };
+
+  const contentWidth = Math.max(1, maxWidth - 1);
+  const maxStart = Math.max(0, valueLength - contentWidth);
+  const start = Math.max(0, Math.min(cursorOffset - contentWidth + 1, maxStart));
+  return { start, end: start + contentWidth };
+}
+
+export function EnhancedTextInput({ defaultValue = '', placeholder = '', maxWidth, onChange, onSubmit }: Props) {
   const [value, setValue] = useState(defaultValue);
   const [cursorOffset, setCursorOffset] = useState(defaultValue.length);
   const firstRender = useRef(true);
@@ -76,18 +86,21 @@ export function EnhancedTextInput({ defaultValue = '', placeholder = '', onChang
 
   const renderedValue = (() => {
     if (value.length === 0) {
-      return placeholder ? chalk.dim(placeholder) : chalk.inverse(' ');
+      const visiblePlaceholder = maxWidth ? placeholder.slice(0, Math.max(1, maxWidth)) : placeholder;
+      return visiblePlaceholder ? chalk.dim(visiblePlaceholder) : chalk.inverse(' ');
     }
+
+    const { start, end } = getInputViewport(value.length, cursorOffset, maxWidth);
     let result = '';
-    for (let i = 0; i < value.length; i++) {
+    for (let i = start; i < Math.min(value.length, end); i++) {
       const char = value[i];
       result += i === cursorOffset ? chalk.inverse(char) : char;
     }
-    if (cursorOffset === value.length) {
+    if (cursorOffset === value.length && (!maxWidth || result.length < maxWidth)) {
       result += chalk.inverse(' ');
     }
     return result;
   })();
 
-  return React.createElement(Text, {}, renderedValue);
+  return React.createElement(Text, { wrap: 'truncate-end' }, renderedValue);
 }

@@ -15,6 +15,7 @@
   "scripts": {
     "build": "tsc",
     "test:model-prompts": "npm run build && node --test tests/model-prompts.test.mjs",
+    "test:settings-layout": "npm run build && node --test tests/settings-layout.test.mjs tests/enhanced-input.test.mjs",
     "prepack": "npm run build",
     "start": "tsx --no-warnings src/index.tsx",
     "dev": "tsx watch --no-warnings --exclude .vibes --exclude dist --clear-screen=false src/index.tsx",

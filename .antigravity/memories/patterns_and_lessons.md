@@ -228,3 +228,10 @@ confidence: high
 - **Fix:** Split model guidance into a shared compatibility prompt plus a final role contract. Executor guidance preserves Vibes function tools and its JSON fallback; planner and reviewer require raw schema-valid JSON; triage prefers its forced function call and falls back to raw JSON.
 - **Distribution:** Model prompts are Vibes runtime assets, not mission-workspace files. Resolve bundled assets relative to `import.meta.url`, include them in the npm `files` list, and cache their contents after the first read.
 - **Files:** `src/agent/model-prompts.ts`, `gemma-12b-prompt.md`, `package.json`
+
+### 32. Fixed-Geometry Ink Settings Forms
+
+- **Lesson:** Preventing `TextInput` remounts is insufficient when the surrounding Ink tree still changes dimensions. Per-keystroke parent state updates, multi-row focused fields, conditional status rows, long values wrapping, and global chrome can each push output across `stdout.rows`, forcing full-screen redraws.
+- **Fix:** Keep active drafts in refs, render focused and unfocused settings at identical one-row height, reserve the status row, horizontally window long input around the cursor, and derive the visible field count from terminal rows. Treat Settings as a modal by hiding variable-height banners, navigation, and footer while it is open.
+- **Shortcut Boundary:** The global App input handler must return immediately for the Settings view so Tab navigation updates only Settings state.
+- **Files:** `src/tui/components/settings-view.tsx`, `src/tui/components/enhanced-text-input.tsx`, `src/index.tsx`
