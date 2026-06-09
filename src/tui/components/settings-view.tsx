@@ -1,5 +1,5 @@
 import React from 'react';
-import { Box, Text, useInput } from 'ink';
+import { Box, Text, useInput, useStdout } from 'ink';
 import { TextInput, Select } from '@inkjs/ui';
 
 type SettingsShape = Record<string, string | number | boolean>;
@@ -7,6 +7,9 @@ type SettingsShape = Record<string, string | number | boolean>;
 interface SettingsViewProps {
   settings: SettingsShape;
   availableModels: string[];
+  availablePlannerModels?: string[];
+  availableReviewerModels?: string[];
+  availableTriageModels?: string[];
   onSave: (updates: Partial<SettingsShape>) => void;
   onClose: () => void;
   onToggleYoloMode?: (enabled: boolean) => void;
@@ -23,10 +26,14 @@ interface FieldDefinition {
 export const SettingsView: React.FC<SettingsViewProps> = ({
   settings,
   availableModels,
+  availablePlannerModels = [],
+  availableReviewerModels = [],
+  availableTriageModels = [],
   onSave,
   onClose,
   onToggleYoloMode,
 }) => {
+  const { stdout } = useStdout();
   const [focusIndex, setFocusIndex] = React.useState(0);
   const [tempSettings, setTempSettings] = React.useState(settings);
   const [draftValues, setDraftValues] = React.useState<Record<string, string>>({});
@@ -34,21 +41,27 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
   const fields: FieldDefinition[] = [
     { label: 'Ollama Model', key: 'OLLAMA_MODEL', type: 'select' },
-    { label: 'Planner Model (empty = same)', key: 'PLANNER_MODEL', type: 'text' },
     { label: 'Base URL', key: 'OLLAMA_BASE_URL', type: 'text' },
     { label: 'API Key', key: 'OLLAMA_API_KEY', type: 'text' },
+    { label: 'Planner Model', key: 'PLANNER_MODEL', type: 'select' },
+    { label: 'Planner Base URL', key: 'PLANNER_BASE_URL', type: 'text' },
+    { label: 'Planner API Key', key: 'PLANNER_API_KEY', type: 'text' },
+    { label: 'Reviewer Model', key: 'REVIEWER_MODEL', type: 'select' },
+    { label: 'Reviewer Base URL', key: 'REVIEWER_BASE_URL', type: 'text' },
+    { label: 'Reviewer API Key', key: 'REVIEWER_API_KEY', type: 'text' },
+    { label: 'Triage Model', key: 'TRIAGE_MODEL', type: 'select' },
+    { label: 'Triage Base URL', key: 'TRIAGE_BASE_URL', type: 'text' },
+    { label: 'Triage API Key', key: 'TRIAGE_API_KEY', type: 'text' },
     { label: 'Context Window', key: 'CONTEXT_WINDOW', type: 'number' },
     { label: 'Max Steps', key: 'MAX_STEPS', type: 'number' },
     { label: 'Reasoning Mode', key: 'THINKING_MODE', type: 'boolean' },
     { label: 'Default YOLO Mode', key: 'YOLO_MODE', type: 'boolean' },
     { label: 'Max Concurrent Tasks', key: 'MAX_CONCURRENT_TASKS', type: 'number' },
     { label: 'Enable Coder-Reviewer Swarm', key: 'ENABLE_REVIEWER', type: 'boolean' },
-    { label: 'Reviewer Model', key: 'REVIEWER_MODEL', type: 'select' },
     { label: 'Memory Enabled', key: 'MEMORY_ENABLED', type: 'boolean' },
     { label: 'Local Memory', key: 'LOCAL_MEMORY', type: 'boolean' },
     { label: 'Memory User ID', key: 'MEMORY_USER_ID', type: 'text' },
     { label: 'Triage Observer', key: 'TRIAGE_ENABLED', type: 'boolean' },
-    { label: 'Triage Model (empty = same as main)', key: 'TRIAGE_MODEL', type: 'text' },
     { label: 'Triage Interval (tasks)', key: 'TRIAGE_INTERVAL', type: 'number' },
     { label: 'Triage Auto-Steer', key: 'TRIAGE_AUTO_STEER', type: 'boolean' },
   ];
@@ -103,9 +116,29 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     }
   });
 
-  const modelOptions = availableModels.length > 0
-    ? availableModels.map((model) => ({ label: model, value: model }))
-    : [{ label: String(settings.OLLAMA_MODEL), value: String(settings.OLLAMA_MODEL) }];
+  const createModelOptions = (models: string[], currentValue: any, isMain = false) => {
+    // Ensure the current value is always an option if the list is empty or doesn't include it
+    const opts = models.map((model) => ({ label: model, value: model }));
+    if (opts.length === 0 && currentValue) {
+      opts.push({ label: String(currentValue), value: String(currentValue) });
+    }
+    if (!isMain) {
+      opts.unshift({ label: 'Same as main', value: '' });
+    } else if (opts.length === 0) {
+      opts.push({ label: 'gemma2:9b', value: 'gemma2:9b' });
+    }
+    return opts;
+  };
+
+  const modelOptionsMap: Record<string, any[]> = {
+    OLLAMA_MODEL: createModelOptions(availableModels, tempSettings.OLLAMA_MODEL, true),
+    PLANNER_MODEL: createModelOptions(availablePlannerModels, tempSettings.PLANNER_MODEL),
+    REVIEWER_MODEL: createModelOptions(availableReviewerModels, tempSettings.REVIEWER_MODEL),
+    TRIAGE_MODEL: createModelOptions(availableTriageModels, tempSettings.TRIAGE_MODEL),
+  };
+
+  const maxVisible = Math.max(5, (stdout.rows || 24) - 10);
+  const startIdx = Math.max(0, Math.min(focusIndex - Math.floor(maxVisible / 2), fields.length - maxVisible));
 
   return (
     <Box flexDirection="column" borderStyle="round" borderColor="cyan" padding={1}>
@@ -114,63 +147,67 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         <Text color="gray">[Tab] Navigate | [Space/Enter] Toggle | [Alt+S/Esc] Close</Text>
       </Box>
 
-      {fields.map((field, index) => (
-        <Box key={field.key} flexDirection="column" marginBottom={1}>
-          <Box gap={1}>
-            <Text color={focusIndex === index ? 'cyan' : 'white'} bold={focusIndex === index}>
-              {focusIndex === index ? '●' : '○'} {field.label}:
-            </Text>
-          </Box>
-
-          <Box paddingX={1}>
-            {field.type === 'select' && focusIndex === index ? (
-              <Select
-                options={modelOptions}
-                defaultValue={String(tempSettings[field.key] ?? '')}
-                onChange={(val) => {
-                  if (val !== tempSettings[field.key]) {
-                    handleSave(field.key, val);
-                  }
-                }}
-              />
-            ) : field.type === 'select' ? (
-              <Text color="gray">{String(tempSettings[field.key] ?? '')}</Text>
-            ) : null}
-
-            {field.type === 'number' && focusIndex === index ? (
-              <Box borderStyle="single" borderColor="cyan" paddingX={1}>
-                <TextInput
-                  defaultValue={String(tempSettings[field.key] ?? '')}
-                  onChange={(val) => setDraftValues(prev => ({ ...prev, [field.key]: val }))}
-                  onSubmit={(val) => handleSave(field.key, Number(val))}
-                />
-              </Box>
-            ) : field.type === 'number' ? (
-              <Text color="gray">{String(tempSettings[field.key] ?? '')}</Text>
-            ) : null}
-
-            {field.type === 'text' && focusIndex === index ? (
-              <Box borderStyle="single" borderColor="cyan" paddingX={1}>
-                <TextInput
-                  defaultValue={String(tempSettings[field.key] ?? '')}
-                  onChange={(val) => setDraftValues(prev => ({ ...prev, [field.key]: val }))}
-                  onSubmit={(val) => handleSave(field.key, val)}
-                />
-              </Box>
-            ) : field.type === 'text' ? (
-              <Text color="gray">
-                {field.key === 'OLLAMA_API_KEY' ? '********' : String(tempSettings[field.key] ?? '')}
+      {fields.map((field, index) => {
+        if (index < startIdx || index >= startIdx + maxVisible) return null;
+        
+        return (
+          <Box key={field.key} flexDirection="column" marginBottom={1}>
+            <Box gap={1}>
+              <Text color={focusIndex === index ? 'cyan' : 'white'} bold={focusIndex === index}>
+                {focusIndex === index ? '●' : '○'} {field.label}:
               </Text>
-            ) : null}
+            </Box>
 
-            {field.type === 'boolean' && (
-              <Text color={tempSettings[field.key] ? 'green' : 'red'}>
-                {tempSettings[field.key] ? '[ ENABLED ]' : '[ DISABLED ]'}
-              </Text>
-            )}
+            <Box paddingX={1}>
+              {field.type === 'select' && focusIndex === index ? (
+                <Select
+                  options={modelOptionsMap[field.key as string] || []}
+                  defaultValue={String(tempSettings[field.key] ?? '')}
+                  onChange={(val) => {
+                    if (val !== tempSettings[field.key]) {
+                      handleSave(field.key, val);
+                    }
+                  }}
+                />
+              ) : field.type === 'select' ? (
+                <Text color="gray">{String(tempSettings[field.key] || 'Same as main')}</Text>
+              ) : null}
+
+              {field.type === 'number' && focusIndex === index ? (
+                <Box borderStyle="single" borderColor="cyan" paddingX={1}>
+                  <TextInput
+                    defaultValue={String(tempSettings[field.key] ?? '')}
+                    onChange={(val) => setDraftValues(prev => ({ ...prev, [field.key]: val }))}
+                    onSubmit={(val) => handleSave(field.key, Number(val))}
+                  />
+                </Box>
+              ) : field.type === 'number' ? (
+                <Text color="gray">{String(tempSettings[field.key] ?? '')}</Text>
+              ) : null}
+
+              {field.type === 'text' && focusIndex === index ? (
+                <Box borderStyle="single" borderColor="cyan" paddingX={1}>
+                  <TextInput
+                    defaultValue={String(tempSettings[field.key] ?? '')}
+                    onChange={(val) => setDraftValues(prev => ({ ...prev, [field.key]: val }))}
+                    onSubmit={(val) => handleSave(field.key, val)}
+                  />
+                </Box>
+              ) : field.type === 'text' ? (
+                <Text color="gray">
+                  {field.key.includes('API_KEY') ? '********' : String(tempSettings[field.key] ?? '')}
+                </Text>
+              ) : null}
+
+              {field.type === 'boolean' && (
+                <Text color={tempSettings[field.key] ? 'green' : 'red'}>
+                  {tempSettings[field.key] ? '[ ENABLED ]' : '[ DISABLED ]'}
+                </Text>
+              )}
+            </Box>
           </Box>
-        </Box>
-      ))}
+        );
+      })}
 
       {status === 'saved' && (
         <Box marginTop={1}>

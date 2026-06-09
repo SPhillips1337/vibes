@@ -144,7 +144,7 @@ Constraints:
         // First attempt already has content; retry must make a new API call
         if (attempt === 1) {
           log('Retrying planner with stronger JSON-only prompt...', 'WARN');
-          const retryResponse = await getOllamaClient().chat.completions.create({
+          const retryResponse = await getOllamaClient('planner').chat.completions.create({
             model: plannerModel,
             messages: [
               { role: 'system', content: systemPrompt },

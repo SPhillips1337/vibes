@@ -27,20 +27,32 @@ const httpsAgent = new HttpsKeepAliveAgent({
 export const getModel = () => config.OLLAMA_MODEL;
 export const getContextWindow = () => config.CONTEXT_WINDOW;
 
-let cachedClient: OpenAI | null = null;
-let cachedBaseUrl = '';
-let cachedApiKey = '';
+const clientCache = new Map<string, OpenAI>();
 
-export const getOllamaClient = (): OpenAI => {
-  if (cachedClient && cachedBaseUrl === config.OLLAMA_BASE_URL && cachedApiKey === config.OLLAMA_API_KEY) {
-    return cachedClient;
+export const getOllamaClient = (role: 'main' | 'planner' | 'reviewer' | 'triage' = 'main'): OpenAI => {
+  let baseUrl = config.OLLAMA_BASE_URL;
+  let apiKey = config.OLLAMA_API_KEY;
+
+  if (role === 'planner' && config.PLANNER_BASE_URL) {
+    baseUrl = config.PLANNER_BASE_URL;
+    apiKey = config.PLANNER_API_KEY || apiKey;
+  } else if (role === 'reviewer' && config.REVIEWER_BASE_URL) {
+    baseUrl = config.REVIEWER_BASE_URL;
+    apiKey = config.REVIEWER_API_KEY || apiKey;
+  } else if (role === 'triage' && config.TRIAGE_BASE_URL) {
+    baseUrl = config.TRIAGE_BASE_URL;
+    apiKey = config.TRIAGE_API_KEY || apiKey;
   }
 
-  cachedBaseUrl = config.OLLAMA_BASE_URL;
-  cachedApiKey = config.OLLAMA_API_KEY;
-  cachedClient = new OpenAI({
-    baseURL: config.OLLAMA_BASE_URL,
-    apiKey: config.OLLAMA_API_KEY,
+  const cacheKey = `${baseUrl}|${apiKey}`;
+  
+  if (clientCache.has(cacheKey)) {
+    return clientCache.get(cacheKey)!;
+  }
+
+  const newClient = new OpenAI({
+    baseURL: baseUrl,
+    apiKey: apiKey,
     timeout: 120000, // 2 minute timeout
     maxRetries: 2,
     fetch: (url, init) => {
@@ -49,7 +61,8 @@ export const getOllamaClient = (): OpenAI => {
     },
   });
 
-  return cachedClient;
+  clientCache.set(cacheKey, newClient);
+  return newClient;
 };
 
 export function formatModelProviderError(error: unknown): string {
@@ -71,19 +84,33 @@ export function formatModelProviderError(error: unknown): string {
   return rawMessage;
 }
 
-export async function listModels() {
+export async function listModels(customBaseUrl?: string, customApiKey?: string) {
   try {
-    const response = await getOllamaClient().models.list();
+    const baseUrl = customBaseUrl || config.OLLAMA_BASE_URL;
+    const apiKey = customApiKey || config.OLLAMA_API_KEY;
+    
+    // Quick cache client generation for listing
+    const tempClient = new OpenAI({
+      baseURL: baseUrl,
+      apiKey: apiKey,
+      timeout: 10000,
+      fetch: (url, init) => {
+        const agent = String(url).startsWith('https') ? httpsAgent : httpAgent;
+        return fetch(url, { ...init, agent });
+      },
+    });
+
+    const response = await tempClient.models.list();
     return response.data.map(m => m.id);
   } catch (error: any) {
-    // Better error logging for connection issues
+    const baseUrl = customBaseUrl || config.OLLAMA_BASE_URL;
+    
     if (error.code === 'ECONNREFUSED' || error.name === 'ConnectTimeoutError') {
-      log(`❌ Connection failed to ${config.OLLAMA_BASE_URL}: ${error.message}`, 'ERROR');
+      log(`❌ Connection failed to ${baseUrl}: ${error.message}`, 'ERROR');
     }
     
-    // Fallback for raw Ollama /api/tags if the OpenAI endpoint isn't available
     try {
-      const response = await fetch(`${config.OLLAMA_BASE_URL.replace(/\/v1$/, '')}/api/tags`);
+      const response = await fetch(`${baseUrl.replace(/\/v1$/, '')}/api/tags`);
       if (response.ok) {
         const data = await response.json();
         return data.models?.map((m: any) => m.name) || [];
@@ -92,7 +119,7 @@ export async function listModels() {
       // Ignore fallback errors
     }
     
-    log(`⚠️ Failed to fetch models from ${config.OLLAMA_BASE_URL}: ${error instanceof Error ? error.message : String(error)}`, 'DEBUG');
+    log(`⚠️ Failed to fetch models from ${baseUrl}: ${error instanceof Error ? error.message : String(error)}`, 'DEBUG');
     return [];
   }
 }

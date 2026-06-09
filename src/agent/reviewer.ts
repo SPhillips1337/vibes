@@ -32,7 +32,7 @@ Task Output:
 ${task.output || 'No output provided.'}`;
 
     try {
-      const response = await getOllamaClient().chat.completions.create({
+      const response = await getOllamaClient('reviewer').chat.completions.create({
         model: config.REVIEWER_MODEL,
         messages: [
           { role: 'system', content: systemPrompt },

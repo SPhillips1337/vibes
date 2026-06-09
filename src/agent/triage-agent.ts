@@ -279,7 +279,7 @@ export class TriageAgent {
 
   private async callTriageModel(context: string): Promise<TriageAction> {
     const model = config.TRIAGE_MODEL || getModel();
-    const client = getOllamaClient();
+    const client = getOllamaClient('triage');
     const systemMsg = { role: 'system' as const, content: TRIAGE_SYSTEM_PROMPT };
     const userMsg = { role: 'user' as const, content: context };
 

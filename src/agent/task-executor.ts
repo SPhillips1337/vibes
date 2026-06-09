@@ -413,9 +413,10 @@ const MSG_HARD_CAP = 150;
         }
 
         // LLM call
-        const taskModel = task.use_reviewer_model && config.ENABLE_REVIEWER ? config.REVIEWER_MODEL : getModel();
-        log(`Using model: ${taskModel} ${task.use_reviewer_model ? '(Reviewer model requested)' : ''}`, 'DEBUG');
-        const response = await getOllamaClient().chat.completions.create({
+        const isReviewerModel = task.use_reviewer_model && config.ENABLE_REVIEWER;
+        const taskModel = isReviewerModel ? config.REVIEWER_MODEL : getModel();
+        log(`Using model: ${taskModel} ${isReviewerModel ? '(Reviewer model requested)' : ''}`, 'DEBUG');
+        const response = await getOllamaClient(isReviewerModel ? 'reviewer' : 'main').chat.completions.create({
           model: taskModel,
           messages,
           tools: this.tools.map(toOpenAITool),
