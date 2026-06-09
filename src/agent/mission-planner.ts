@@ -102,7 +102,7 @@ Constraints:
 12. Define task dependencies in the "depends_on" field using the exact titles of prerequisite tasks in the plan. If there are no prerequisites, use an empty array. Design the plan so that file creation, code implementation, test suites, and manual verifications follow a logical sequence.`;
 
     const plannerModel = config.PLANNER_MODEL || getModel();
-    const response = await getOllamaClient().chat.completions.create({
+    const response = await getOllamaClient('planner').chat.completions.create({
       model: plannerModel,
       messages: [
         { role: 'system', content: systemPrompt },
