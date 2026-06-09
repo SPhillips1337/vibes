@@ -235,3 +235,10 @@ confidence: high
 - **Fix:** Keep active drafts in refs, render focused and unfocused settings at identical one-row height, reserve the status row, horizontally window long input around the cursor, and derive the visible field count from terminal rows. Treat Settings as a modal by hiding variable-height banners, navigation, and footer while it is open.
 - **Shortcut Boundary:** The global App input handler must return immediately for the Settings view so Tab navigation updates only Settings state.
 - **Files:** `src/tui/components/settings-view.tsx`, `src/tui/components/enhanced-text-input.tsx`, `src/index.tsx`
+
+### 33. Triage Metric Boundary Validation
+
+- **Lesson:** Context pressure telemetry may contain zero or invalid capacity readings during initialization. JavaScript returns `Infinity` or `NaN` instead of throwing on division by zero, which can silently corrupt threshold checks and averages.
+- **Fix:** Ignore readings whose total capacity is not positive before calculating live or aggregate pressure. Provider endpoint configuration accepts either an empty fallback value or a syntactically valid URL.
+- **Security:** Public examples and project manifests use localhost or environment-variable placeholders instead of concrete private-service hosts.
+- **Files:** `src/agent/triage-agent.ts`, `src/config.ts`, `.env.example`, `project.json`

@@ -171,7 +171,7 @@ export class TriageAgent {
     // 3. Context pressure spike
     if (snap.contextReadings.length >= 2) {
       const last = snap.contextReadings[snap.contextReadings.length - 1];
-      if (last.used / last.total > CONTEXT_HIGH_PRESSURE) {
+      if (last.total > 0 && last.used / last.total > CONTEXT_HIGH_PRESSURE) {
         this.pendingSteerMessage = GUIDANCE_CONTEXT_PRESSURE;
         log(`Triage live: context pressure ${(last.used / last.total * 100).toFixed(0)}%`, 'WARN');
         return;
@@ -240,8 +240,10 @@ export class TriageAgent {
         }
       }
       for (const r of snap.contextReadings) {
-        avgPressure += r.used / r.total;
-        pressureReadings++;
+        if (r.total > 0) {
+          avgPressure += r.used / r.total;
+          pressureReadings++;
+        }
       }
       maxTurnRatio = Math.max(maxTurnRatio, snap.turnCount / Math.max(snap.maxSteps, 1));
       totalLogErrors += snap.errorLogCount;

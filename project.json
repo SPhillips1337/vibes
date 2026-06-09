@@ -195,7 +195,7 @@
   "external_services": {
     "ollama": "localhost:11434 (or remote endpoint)",
     "lm_studio": "192.168.5.157:1234 (dev instance)",
-    "neo4j": "neo4j.happymonkey.ai:7687 (Codex RAG knowledge graph)",
+    "neo4j": "Configured via NEO4J_URI (Codex RAG knowledge graph)",
     "github": "api.github.com (MCP integration)",
     "perplexity": "api.perplexity.ai (MCP search)"
   },
