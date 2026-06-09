@@ -140,7 +140,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
             <Box paddingX={1} flexDirection="column">
               {field.type === 'number' && focusIndex === index ? (
-                <Box borderStyle="single" borderColor="cyan" paddingX={1}>
+                <Box flexDirection="row">
+                  <Text color="cyan">❯ </Text>
                   <TextInput
                     defaultValue={String(tempSettings[field.key] ?? '')}
                     onChange={(val) => setDraftValues(prev => ({ ...prev, [field.key]: val }))}
@@ -148,29 +149,34 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   />
                 </Box>
               ) : field.type === 'number' ? (
-                <Text color="gray">{String(tempSettings[field.key] ?? '')}</Text>
+                <Box flexDirection="row" paddingLeft={2}>
+                  <Text color="gray">{String(tempSettings[field.key] ?? '')}</Text>
+                </Box>
               ) : null}
 
               {field.type === 'text' && focusIndex === index ? (
-                <Box flexDirection="column">
-                  <Box borderStyle="single" borderColor="cyan" paddingX={1}>
-                    <TextInput
-                      defaultValue={String(tempSettings[field.key] ?? '')}
-                      onChange={(val) => setDraftValues(prev => ({ ...prev, [field.key]: val }))}
-                      onSubmit={(val) => handleSave(field.key, val)}
-                    />
-                  </Box>
+                <Box flexDirection="row">
+                  <Text color="cyan">❯ </Text>
+                  <TextInput
+                    defaultValue={String(tempSettings[field.key] ?? '')}
+                    onChange={(val) => setDraftValues(prev => ({ ...prev, [field.key]: val }))}
+                    onSubmit={(val) => handleSave(field.key, val)}
+                  />
                 </Box>
               ) : field.type === 'text' ? (
-                <Text color="gray">
-                  {field.key.includes('API_KEY') ? '********' : String(tempSettings[field.key] || (field.key.includes('MODEL') && field.key !== 'OLLAMA_MODEL' ? 'Same as main' : ''))}
-                </Text>
+                <Box flexDirection="row" paddingLeft={2}>
+                  <Text color="gray">
+                    {field.key.includes('API_KEY') ? '********' : String(tempSettings[field.key] || (field.key.includes('MODEL') && field.key !== 'OLLAMA_MODEL' ? 'Same as main' : ''))}
+                  </Text>
+                </Box>
               ) : null}
 
               {field.type === 'boolean' && (
-                <Text color={tempSettings[field.key] ? 'green' : 'red'}>
-                  {tempSettings[field.key] ? '[ ENABLED ]' : '[ DISABLED ]'}
-                </Text>
+                <Box flexDirection="row" paddingLeft={2}>
+                  <Text color={tempSettings[field.key] ? 'green' : 'red'}>
+                    {tempSettings[field.key] ? '[ ENABLED ]' : '[ DISABLED ]'}
+                  </Text>
+                </Box>
               )}
             </Box>
           </Box>
